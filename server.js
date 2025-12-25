@@ -41,9 +41,7 @@ const PUPPETEER_CONFIG = {
     '--disable-software-rasterizer',
     '--disable-extensions'
   ],
-  ...(process.env.PUPPETEER_EXECUTABLE_PATH && {
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
-  })
+  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/opt/render/.cache/puppeteer/chrome/linux-143.0.7499.169/chrome-linux64/chrome'
 };
 
 // ================================
