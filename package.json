@@ -5,8 +5,7 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js",
-    "postinstall": "npx puppeteer browsers install chrome"
+    "start": "node server.js"
   },
   "type": "commonjs",
   "dependencies": {
@@ -15,10 +14,6 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "puppeteer": "^24.34.0",
-    "@sendgrid/mail": "^8.1.0",
-    "axios": "^1.6.0",
-    "cheerio": "^1.0.0-rc.12",
-    "pdf-lib": "^1.17.1"
+    "puppeteer": "^24.34.0"
   }
 }
