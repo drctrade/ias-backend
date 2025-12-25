@@ -41,7 +41,7 @@ const PUPPETEER_CONFIG = {
     '--disable-software-rasterizer',
     '--disable-extensions'
   ],
-  executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome-stable' || '/usr/bin/chromium-browser'
+  executablePath: '/usr/bin/chromium-browser'
 };
 
 // ================================
