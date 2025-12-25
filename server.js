@@ -453,6 +453,16 @@ app.post('/api/generate/package', async (req, res) => {
 
   console.log(`[PACKAGE] Génération pour ${url}...`);
 
+  console.log(`[DEBUG] PUPPETEER_EXECUTABLE_PATH = ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+  console.log(`[DEBUG] Chemin forcé = /opt/render/.cache/puppeteer/chrome/linux-143.0.7499.169/chrome-linux64/chrome`);
+
+// Vérifier si le fichier existe
+const fs = require('fs');
+const path1 = '/opt/render/.cache/puppeteer/chrome/linux-143.0.7499.169/chrome-linux64/chrome';
+const path2 = '/opt/render/.cache/puppeteer/chrome/linux-143.0.7499.169/chrome-linux64/chrome-linux64';
+console.log(`[DEBUG] Path1 existe ? ${fs.existsSync(path1)}`);
+console.log(`[DEBUG] Path2 existe ? ${fs.existsSync(path2)}`);
+
   let browser;
   try {
     // Step 1: Scrape website
