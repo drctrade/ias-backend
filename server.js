@@ -40,8 +40,8 @@ const PUPPETEER_CONFIG = {
     '--disable-gpu',
     '--disable-software-rasterizer',
     '--disable-extensions'
-  ]
-  // On ne spécifie PAS executablePath, Puppeteer va chercher automatiquement
+  ],
+  executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome-stable' || '/usr/bin/chromium-browser'
 };
 
 // ================================
