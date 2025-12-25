@@ -1,720 +1,571 @@
 // ================================
-// IAS BACKEND SERVER V2.0
-// Système Complet de Scraping & Automation
+// IAS BACKEND SERVER v2.0
+// Système Complet : Scraping + PDF + Emails
 // ================================
 
 const express = require('express');
 const cors = require('cors');
+const bodyParser = require('body-parser');
 const puppeteer = require('puppeteer');
 const { createClient } = require('@supabase/supabase-js');
-const sgMail = require('@sendgrid/mail');
-const axios = require('axios');
-const cheerio = require('cheerio');
-require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-
-// Supabase Client
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_KEY
-);
-
-// SendGrid Configuration
-if (process.env.SENDGRID_API_KEY) {
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // ================================
-// PUPPETEER CONFIGURATION
+// SUPABASE CONFIGURATION
+// ================================
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://abuvnijldapnuiwumxtv.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFidXZuaWpsZGFwbnVpd3VteHR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1Njc1NzksImV4cCI6MjA4MjE0MzU3OX0.p_6bCgF1oofxhxNvnDlXpz2dq340XsRPFzOTqwgTN_k';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ================================
+// PUPPETEER CONFIGURATION FOR RENDER
 // ================================
 const PUPPETEER_CONFIG = {
-    headless: true,
-    args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-blink-features=AutomationControlled'
-    ],
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+  headless: true,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--disable-extensions'
+  ],
+  ...(process.env.PUPPETEER_EXECUTABLE_PATH && {
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
+  })
 };
 
 // ================================
-// ROUTE DE TEST
+// UTILITY FUNCTIONS
 // ================================
-app.get('/', (req, res) => {
-    res.json({
-        status: 'OK',
-        version: '2.0',
-        message: 'IAS Backend API - Système Complet',
-        endpoints: {
-            health: 'GET /',
-            scrapeWebsite: 'POST /api/scrape/website',
-            scrapeLinkedIn: 'POST /api/scrape/linkedin',
-            scrapeGoogleMaps: 'POST /api/scrape/google-maps',
-            generatePackage: 'POST /api/generate/package',
-            generatePDF: 'POST /api/generate/pdf',
-            sendEmail: 'POST /api/email/send',
-            enrichProspect: 'POST /api/enrich/prospect',
-            getProspects: 'GET /api/prospects'
+
+// Fonction pour extraire les couleurs d'un site web
+async function extractColors(page) {
+  try {
+    const colors = await page.evaluate(() => {
+      const allElements = document.querySelectorAll('*');
+      const colorSet = new Set();
+      
+      allElements.forEach(el => {
+        const styles = window.getComputedStyle(el);
+        const bgColor = styles.backgroundColor;
+        const color = styles.color;
+        
+        if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)' && bgColor !== 'transparent') {
+          colorSet.add(bgColor);
         }
+        if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') {
+          colorSet.add(color);
+        }
+      });
+      
+      return Array.from(colorSet).slice(0, 10);
     });
-});
+    
+    return colors;
+  } catch (error) {
+    console.error('[COLORS] Erreur:', error.message);
+    return ['#0f204b', '#5bc236', '#ffffff', '#000000'];
+  }
+}
+
+// Fonction pour analyser les problèmes d'un site
+async function analyzeIssues(page) {
+  try {
+    const issues = await page.evaluate(() => {
+      const problems = [];
+      
+      // Check mobile responsiveness
+      if (!document.querySelector('meta[name="viewport"]')) {
+        problems.push('Site non-responsive (pas de meta viewport)');
+      }
+      
+      // Check for chatbot
+      const hasChatbot = document.querySelector('[class*="chat"]') || 
+                        document.querySelector('[id*="chat"]') ||
+                        document.querySelector('iframe[src*="chat"]');
+      if (!hasChatbot) {
+        problems.push('Pas de chatbot IA');
+      }
+      
+      // Check design age
+      const hasModernCSS = document.querySelector('link[href*="tailwind"]') ||
+                          document.querySelector('link[href*="bootstrap"]');
+      if (!hasModernCSS) {
+        problems.push('Design potentiellement obsolète');
+      }
+      
+      // Check CTA buttons
+      const ctaButtons = document.querySelectorAll('a[href*="contact"], button[class*="cta"], a[class*="button"]');
+      if (ctaButtons.length < 2) {
+        problems.push('Manque de CTA (Call-to-Action)');
+      }
+      
+      // Check loading speed
+      if (performance.timing.loadEventEnd - performance.timing.navigationStart > 3000) {
+        problems.push('Temps de chargement lent (>3s)');
+      }
+      
+      return problems.length > 0 ? problems : ['Aucun problème majeur détecté'];
+    });
+    
+    return issues;
+  } catch (error) {
+    console.error('[ISSUES] Erreur:', error.message);
+    return ['Erreur lors de l\'analyse'];
+  }
+}
 
 // ================================
-// ENDPOINT: SCRAPER UN SITE WEB
-// ================================
-app.post('/api/scrape/website', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL manquante' });
-    }
-    
-    try {
-        console.log(`[SCRAPING] Analyse de ${url}...`);
-        
-        const browser = await puppeteer.launch(PUPPETEER_CONFIG);
-        const page = await browser.newPage();
-        
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-        
-        const data = await page.evaluate(() => {
-            const title = document.title;
-            const metaDesc = document.querySelector('meta[name="description"]')?.content || '';
-            const styles = window.getComputedStyle(document.body);
-            const bgColor = styles.backgroundColor;
-            const textColor = styles.color;
-            const imageCount = document.querySelectorAll('img').length;
-            const hasChatbot = !!(document.querySelector('[class*="chat"]') || 
-                               document.querySelector('[id*="chat"]') || 
-                               document.querySelector('iframe[src*="chat"]'));
-            const viewport = document.querySelector('meta[name="viewport"]');
-            const isResponsive = viewport && viewport.content.includes('width=device-width');
-            
-            return {
-                title,
-                metaDesc,
-                colors: { bgColor, textColor },
-                imageCount,
-                hasChatbot,
-                isResponsive
-            };
-        });
-        
-        await browser.close();
-        
-        const issues = [];
-        if (!data.isResponsive) issues.push('Site non-responsive');
-        if (!data.hasChatbot) issues.push('Pas de chatbot IA');
-        if (data.imageCount < 3) issues.push('Peu d\'images');
-        if (!data.metaDesc) issues.push('Pas de méta description');
-        
-        let score = 50;
-        if (data.isResponsive) score += 15;
-        if (data.hasChatbot) score += 20;
-        if (data.imageCount >= 5) score += 10;
-        if (data.metaDesc) score += 5;
-        
-        const result = {
-            url,
-            ...data,
-            issues,
-            score,
-            scrapedAt: new Date().toISOString()
-        };
-        
-        console.log(`[SCRAPING] Terminé ! Score: ${score}/100`);
-        res.json(result);
-        
-    } catch (error) {
-        console.error('[SCRAPING] Erreur:', error);
-        res.status(500).json({ 
-            error: 'Erreur lors du scraping',
-            details: error.message 
-        });
-    }
-});
-
-// ================================
-// ENDPOINT: SCRAPER LINKEDIN
-// ================================
-app.post('/api/scrape/linkedin', async (req, res) => {
-    const { searchQuery, limit = 10 } = req.body;
-    
-    if (!searchQuery) {
-        return res.status(400).json({ error: 'searchQuery manquant' });
-    }
-    
-    if (!process.env.LINKEDIN_EMAIL || !process.env.LINKEDIN_PASSWORD) {
-        return res.status(400).json({ 
-            error: 'Identifiants LinkedIn manquants',
-            message: 'Configurez LINKEDIN_EMAIL et LINKEDIN_PASSWORD dans les variables d\'environnement'
-        });
-    }
-    
-    try {
-        console.log(`[LINKEDIN] Recherche: ${searchQuery}`);
-        
-        const browser = await puppeteer.launch(PUPPETEER_CONFIG);
-        const page = await browser.newPage();
-        
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-        
-        // Connexion LinkedIn
-        await page.goto('https://www.linkedin.com/login', { waitUntil: 'networkidle2' });
-        await page.type('#username', process.env.LINKEDIN_EMAIL);
-        await page.type('#password', process.env.LINKEDIN_PASSWORD);
-        await page.click('button[type="submit"]');
-        await page.waitForNavigation({ waitUntil: 'networkidle2' });
-        
-        // Recherche
-        const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`;
-        await page.goto(searchUrl, { waitUntil: 'networkidle2' });
-        
-        // Attendre les résultats
-        await page.waitForSelector('.entity-result', { timeout: 10000 });
-        
-        // Extraire les profils
-        const profiles = await page.evaluate((maxResults) => {
-            const results = Array.from(document.querySelectorAll('.entity-result'));
-            return results.slice(0, maxResults).map(el => {
-                const nameEl = el.querySelector('.entity-result__title-text a');
-                const titleEl = el.querySelector('.entity-result__primary-subtitle');
-                const locationEl = el.querySelector('.entity-result__secondary-subtitle');
-                const profileUrl = nameEl?.href || '';
-                
-                return {
-                    full_name: nameEl?.innerText.trim() || '',
-                    job_title: titleEl?.innerText.trim() || '',
-                    city: locationEl?.innerText.trim().split(',')[0] || '',
-                    country: locationEl?.innerText.trim().split(',')[1]?.trim() || '',
-                    linkedin_url: profileUrl,
-                    source: 'linkedin',
-                    status: 'new',
-                    lead_score: 70
-                };
-            });
-        }, limit);
-        
-        await browser.close();
-        
-        // Sauvegarder dans Supabase
-        if (profiles.length > 0) {
-            const { data, error } = await supabase
-                .from('prospects')
-                .insert(profiles)
-                .select();
-            
-            if (error) throw error;
-            
-            console.log(`[LINKEDIN] ${profiles.length} prospects ajoutés`);
-            return res.json({ success: true, prospects: data, count: data.length });
-        }
-        
-        res.json({ success: true, prospects: [], count: 0, message: 'Aucun résultat' });
-        
-    } catch (error) {
-        console.error('[LINKEDIN] Erreur:', error);
-        res.status(500).json({ 
-            error: 'Erreur scraping LinkedIn',
-            details: error.message 
-        });
-    }
-});
-
-// ================================
-// ENDPOINT: SCRAPER GOOGLE MAPS
-// ================================
-app.post('/api/scrape/google-maps', async (req, res) => {
-    const { searchQuery, location = 'Montreal, QC', limit = 10 } = req.body;
-    
-    if (!searchQuery) {
-        return res.status(400).json({ error: 'searchQuery manquant' });
-    }
-    
-    try {
-        console.log(`[GOOGLE MAPS] Recherche: ${searchQuery} in ${location}`);
-        
-        const browser = await puppeteer.launch(PUPPETEER_CONFIG);
-        const page = await browser.newPage();
-        
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-        
-        const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(searchQuery + ' ' + location)}`;
-        await page.goto(searchUrl, { waitUntil: 'networkidle2' });
-        
-        await page.waitForTimeout(3000);
-        
-        // Scroll pour charger plus de résultats
-        await page.evaluate(() => {
-            const scrollableDiv = document.querySelector('[role="feed"]');
-            if (scrollableDiv) {
-                scrollableDiv.scrollTop = scrollableDiv.scrollHeight;
-            }
-        });
-        
-        await page.waitForTimeout(2000);
-        
-        // Extraire les entreprises
-        const businesses = await page.evaluate((maxResults) => {
-            const results = Array.from(document.querySelectorAll('[role="feed"] > div'));
-            return results.slice(0, maxResults).map(el => {
-                const nameEl = el.querySelector('[class*="fontHeadlineSmall"]');
-                const addressEl = el.querySelector('[class*="fontBodyMedium"]');
-                const ratingEl = el.querySelector('[role="img"]');
-                
-                return {
-                    company_name: nameEl?.innerText.trim() || '',
-                    full_name: nameEl?.innerText.trim() || '',
-                    city: location.split(',')[0].trim(),
-                    country: 'Canada',
-                    source: 'google_maps',
-                    status: 'new',
-                    lead_score: 65,
-                    notes: addressEl?.innerText.trim() || ''
-                };
-            }).filter(b => b.company_name);
-        }, limit);
-        
-        await browser.close();
-        
-        // Sauvegarder dans Supabase
-        if (businesses.length > 0) {
-            const { data, error } = await supabase
-                .from('prospects')
-                .insert(businesses)
-                .select();
-            
-            if (error) throw error;
-            
-            console.log(`[GOOGLE MAPS] ${businesses.length} prospects ajoutés`);
-            return res.json({ success: true, prospects: data, count: data.length });
-        }
-        
-        res.json({ success: true, prospects: [], count: 0, message: 'Aucun résultat' });
-        
-    } catch (error) {
-        console.error('[GOOGLE MAPS] Erreur:', error);
-        res.status(500).json({ 
-            error: 'Erreur scraping Google Maps',
-            details: error.message 
-        });
-    }
-});
-
-// ================================
-// ENDPOINT: GÉNÉRER UN PACKAGE COMPLET
-// ================================
-app.post('/api/generate/package', async (req, res) => {
-    const { url, prospectId } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL manquante' });
-    }
-    
-    try {
-        console.log(`[PACKAGE] Génération pour ${url}...`);
-        
-        // 1. Scraper le site
-        const scrapeResponse = await axios.post(`http://localhost:${PORT}/api/scrape/website`, { url });
-        const scrapeData = scrapeResponse.data;
-        
-        // 2. Générer les livrables
-        const htmlCode = generateHTMLCode(scrapeData);
-        const aiPrompt = generateAIPrompt(scrapeData);
-        const loomScript = generateLoomScript(scrapeData);
-        const emailTemplates = generateEmailTemplates(scrapeData);
-        const pomelliBrandKit = generatePomelliBrandKit(scrapeData);
-        
-        // 3. Créer le package dans Supabase
-        const { data: packageData, error } = await supabase
-            .from('packages')
-            .insert([{
-                prospect_id: prospectId || null,
-                target_website_url: url,
-                status: 'completed',
-                html_code: htmlCode,
-                ai_system_prompt: aiPrompt,
-                loom_script: loomScript,
-                email_templates: emailTemplates,
-                pomelli_brand_kit: pomelliBrandKit,
-                color_palette: scrapeData.colors,
-                lead_leakages: scrapeData.issues,
-                audit_summary: `Score global: ${scrapeData.score}/100`,
-                generation_completed_at: new Date().toISOString()
-            }])
-            .select()
-            .single();
-        
-        if (error) throw error;
-        
-        console.log(`[PACKAGE] Créé avec succès ! ID: ${packageData.id}`);
-        
-        res.json({
-            success: true,
-            packageId: packageData.id,
-            package: packageData
-        });
-        
-    } catch (error) {
-        console.error('[PACKAGE] Erreur:', error);
-        res.status(500).json({ 
-            error: 'Erreur lors de la génération',
-            details: error.message 
-        });
-    }
-});
-
-// ================================
-// ENDPOINT: GÉNÉRER UN PDF
-// ================================
-app.post('/api/generate/pdf', async (req, res) => {
-    const { packageId } = req.body;
-    
-    if (!packageId) {
-        return res.status(400).json({ error: 'packageId manquant' });
-    }
-    
-    try {
-        console.log(`[PDF] Génération pour package ${packageId}...`);
-        
-        // Récupérer le package depuis Supabase
-        const { data: packageData, error } = await supabase
-            .from('packages')
-            .select('*')
-            .eq('id', packageId)
-            .single();
-        
-        if (error) throw error;
-        
-        // Créer le HTML pour le PDF
-        const htmlContent = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <style>
-                    body { font-family: Arial, sans-serif; padding: 40px; }
-                    h1 { color: #5bc236; }
-                    .section { margin: 20px 0; padding: 20px; background: #f5f5f5; }
-                </style>
-            </head>
-            <body>
-                <h1>Rapport d'Audit - ${packageData.target_website_url}</h1>
-                <div class="section">
-                    <h2>Score Global</h2>
-                    <p>${packageData.audit_summary}</p>
-                </div>
-                <div class="section">
-                    <h2>Problèmes Identifiés</h2>
-                    <ul>
-                        ${packageData.lead_leakages.map(issue => `<li>${issue}</li>`).join('')}
-                    </ul>
-                </div>
-                <div class="section">
-                    <h2>Recommandations</h2>
-                    <p>Voir le package complet pour les solutions détaillées.</p>
-                </div>
-            </body>
-            </html>
-        `;
-        
-        const browser = await puppeteer.launch(PUPPETEER_CONFIG);
-        const page = await browser.newPage();
-        await page.setContent(htmlContent);
-        
-        const pdfBuffer = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' }
-        });
-        
-        await browser.close();
-        
-        // Retourner le PDF
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=audit-${packageId}.pdf`);
-        res.send(pdfBuffer);
-        
-        console.log(`[PDF] Généré avec succès`);
-        
-    } catch (error) {
-        console.error('[PDF] Erreur:', error);
-        res.status(500).json({ 
-            error: 'Erreur génération PDF',
-            details: error.message 
-        });
-    }
-});
-
-// ================================
-// ENDPOINT: ENVOYER UN EMAIL
-// ================================
-app.post('/api/email/send', async (req, res) => {
-    const { to, subject, html, prospectId } = req.body;
-    
-    if (!to || !subject || !html) {
-        return res.status(400).json({ error: 'Paramètres manquants (to, subject, html)' });
-    }
-    
-    if (!process.env.SENDGRID_API_KEY) {
-        return res.status(400).json({ 
-            error: 'SendGrid non configuré',
-            message: 'Ajoutez SENDGRID_API_KEY dans les variables d\'environnement'
-        });
-    }
-    
-    try {
-        console.log(`[EMAIL] Envoi à ${to}...`);
-        
-        const msg = {
-            to,
-            from: 'hello@iasbranding.com', // Remplacez par votre email vérifié SendGrid
-            subject,
-            html
-        };
-        
-        await sgMail.send(msg);
-        
-        // Enregistrer dans Supabase
-        if (prospectId) {
-            await supabase
-                .from('email_campaigns')
-                .insert([{
-                    prospect_id: prospectId,
-                    campaign_name: 'Manuel',
-                    subject_line: subject,
-                    email_template: html,
-                    status: 'sent',
-                    sent_at: new Date().toISOString()
-                }]);
-        }
-        
-        console.log(`[EMAIL] Envoyé avec succès`);
-        res.json({ success: true, message: 'Email envoyé' });
-        
-    } catch (error) {
-        console.error('[EMAIL] Erreur:', error);
-        res.status(500).json({ 
-            error: 'Erreur envoi email',
-            details: error.message 
-        });
-    }
-});
-
-// ================================
-// ENDPOINT: ENRICHIR UN PROSPECT (Apollo.io)
-// ================================
-app.post('/api/enrich/prospect', async (req, res) => {
-    const { prospectId, company } = req.body;
-    
-    if (!prospectId || !company) {
-        return res.status(400).json({ error: 'prospectId et company requis' });
-    }
-    
-    if (!process.env.APOLLO_API_KEY) {
-        return res.status(400).json({ 
-            error: 'Apollo.io non configuré',
-            message: 'Ajoutez APOLLO_API_KEY dans les variables d\'environnement'
-        });
-    }
-    
-    try {
-        console.log(`[APOLLO] Enrichissement pour ${company}...`);
-        
-        // Appel API Apollo.io pour trouver l'email
-        const response = await axios.post('https://api.apollo.io/v1/people/match', {
-            organization_name: company
-        }, {
-            headers: {
-                'X-Api-Key': process.env.APOLLO_API_KEY,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const enrichedData = response.data.person;
-        
-        // Mettre à jour le prospect dans Supabase
-        const { data, error } = await supabase
-            .from('prospects')
-            .update({
-                email: enrichedData.email || null,
-                phone: enrichedData.phone_numbers?.[0] || null,
-                linkedin_url: enrichedData.linkedin_url || null,
-                job_title: enrichedData.title || null
-            })
-            .eq('id', prospectId)
-            .select()
-            .single();
-        
-        if (error) throw error;
-        
-        console.log(`[APOLLO] Enrichi avec succès`);
-        res.json({ success: true, prospect: data });
-        
-    } catch (error) {
-        console.error('[APOLLO] Erreur:', error);
-        res.status(500).json({ 
-            error: 'Erreur enrichissement',
-            details: error.message 
-        });
-    }
-});
-
-// ================================
-// ENDPOINT: RÉCUPÉRER LES PROSPECTS
-// ================================
-app.get('/api/prospects', async (req, res) => {
-    try {
-        const { data, error } = await supabase
-            .from('prospects')
-            .select('*')
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        res.json({ prospects: data });
-    } catch (error) {
-        console.error('[PROSPECTS] Erreur:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// ================================
-// FONCTIONS DE GÉNÉRATION
+// GENERATION FUNCTIONS
 // ================================
 
-function generateHTMLCode(scrapeData) {
-    return `<!DOCTYPE html>
+function generateHTMLCode(companyName, colors, siteUrl) {
+  const primaryColor = colors[0] || '#5bc236';
+  const secondaryColor = colors[1] || '#0f204b';
+  
+  return `<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${scrapeData.title}</title>
+    <title>${companyName} - Site Modernisé</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --primary: ${primaryColor};
+            --secondary: ${secondaryColor};
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+        }
+    </style>
 </head>
-<body style="background: ${scrapeData.colors.bgColor}; color: ${scrapeData.colors.textColor}">
-    <div class="container mx-auto p-8">
-        <h1 class="text-4xl font-bold mb-4">${scrapeData.title}</h1>
-        <p class="text-lg">${scrapeData.metaDesc}</p>
-        
-        <!-- Chatbot IA intégré -->
-        <div class="fixed bottom-4 right-4">
-            <button class="bg-blue-500 text-white px-6 py-3 rounded-full shadow-lg">
-                💬 Besoin d'aide ?
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="gradient-bg text-white py-20">
+        <div class="container mx-auto px-4 text-center">
+            <h1 class="text-5xl font-bold mb-4">${companyName}</h1>
+            <p class="text-xl mb-8">Votre partenaire de confiance</p>
+            <button class="bg-white text-gray-900 px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform">
+                <i class="fas fa-phone mr-2"></i>Contactez-nous
             </button>
         </div>
+    </header>
+
+    <!-- Services -->
+    <section class="py-16">
+        <div class="container mx-auto px-4">
+            <h2 class="text-4xl font-bold text-center mb-12">Nos Services</h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="bg-white p-8 rounded-xl shadow-lg">
+                    <i class="fas fa-star text-4xl mb-4" style="color: var(--primary)"></i>
+                    <h3 class="text-2xl font-bold mb-4">Service Premium</h3>
+                    <p class="text-gray-600">Excellence et qualité garanties</p>
+                </div>
+                <div class="bg-white p-8 rounded-xl shadow-lg">
+                    <i class="fas fa-bolt text-4xl mb-4" style="color: var(--primary)"></i>
+                    <h3 class="text-2xl font-bold mb-4">Rapidité</h3>
+                    <p class="text-gray-600">Service rapide et efficace</p>
+                </div>
+                <div class="bg-white p-8 rounded-xl shadow-lg">
+                    <i class="fas fa-shield-alt text-4xl mb-4" style="color: var(--primary)"></i>
+                    <h3 class="text-2xl font-bold mb-4">Confiance</h3>
+                    <p class="text-gray-600">Plus de 1000 clients satisfaits</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="gradient-bg text-white py-16 text-center">
+        <div class="container mx-auto px-4">
+            <h2 class="text-4xl font-bold mb-4">Prêt à Commencer ?</h2>
+            <p class="text-xl mb-8">Contactez-nous dès aujourd'hui pour un devis gratuit</p>
+            <button class="bg-white text-gray-900 px-10 py-4 rounded-full font-bold text-lg hover:scale-105 transition-transform">
+                <i class="fas fa-envelope mr-2"></i>Obtenir un Devis
+            </button>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-white py-8 text-center">
+        <p>&copy; 2025 ${companyName}. Tous droits réservés.</p>
+        <p class="text-gray-400 mt-2">Site original: <a href="${siteUrl}" class="underline">${siteUrl}</a></p>
+    </footer>
+
+    <!-- AI Chatbot Widget -->
+    <div id="chatbot-widget" style="position: fixed; bottom: 20px; right: 20px; z-index: 9999;">
+        <button class="gradient-bg text-white w-16 h-16 rounded-full shadow-2xl hover:scale-110 transition-transform">
+            <i class="fas fa-comments text-2xl"></i>
+        </button>
     </div>
 </body>
 </html>`;
 }
 
-function generateAIPrompt(scrapeData) {
-    return `Tu es l'assistant virtuel de ${scrapeData.title}.
+function generateAISystemPrompt(companyName, siteUrl, colors) {
+  return `Tu es l'assistant virtuel de ${companyName}, une entreprise accessible sur ${siteUrl}.
 
-PERSONNALITÉ:
-- Professionnel et chaleureux
-- Expert dans le domaine
-- Réponse rapide (<3 secondes)
+**Ton rôle:**
+- Répondre aux questions des visiteurs sur les services de ${companyName}
+- Qualifier les prospects en posant des questions pertinentes
+- Proposer des rendez-vous ou des devis
+- Être chaleureux, professionnel et efficace
 
-MISSION:
-- Qualifier les visiteurs
-- Répondre aux questions
-- Proposer des rendez-vous
+**Informations sur l'entreprise:**
+- Nom: ${companyName}
+- Site web: ${siteUrl}
+- Couleurs de marque: ${colors.slice(0, 3).join(', ')}
 
-INFOS IMPORTANTES:
-- Site web: ${scrapeData.url}
-- Description: ${scrapeData.metaDesc}
+**Ton de communication:**
+- Professionnel mais accessible
+- Empathique et à l'écoute
+- Orienté solution
+- Français impeccable (Canada/France selon le contexte)
 
-FLUX DE CONVERSATION:
-1. Accueil chaleureux
-2. Qualification du besoin
-3. Recommandation personnalisée
-4. Gestion des objections
-5. Prise de rendez-vous`;
+**Exemples de réponses:**
+
+Visiteur: "Quels sont vos services ?"
+Toi: "Nous proposons [LISTE DES SERVICES]. Quel service vous intéresse particulièrement ? Je peux vous donner plus de détails."
+
+Visiteur: "Combien ça coûte ?"
+Toi: "Nos tarifs varient selon vos besoins spécifiques. Puis-je vous poser quelques questions pour vous préparer un devis personnalisé ? 📋"
+
+Visiteur: "Je veux un rendez-vous"
+Toi: "Parfait ! 🎉 Je peux vous proposer [JOURS/HEURES]. Quelle plage horaire vous conviendrait le mieux ?"
+
+**Consignes importantes:**
+✅ Toujours être positif et encourageant
+✅ Poser des questions ouvertes pour qualifier
+✅ Proposer des solutions concrètes
+❌ Ne jamais dire "Je ne sais pas" (rediriger vers un humain si nécessaire)
+❌ Ne jamais donner de prix exacts sans contexte`;
 }
 
-function generateLoomScript(scrapeData) {
-    return `SCRIPT VIDÉO LOOM - ${scrapeData.title}
+function generateLoomScript(companyName, siteUrl, issues) {
+  return `🎥 **SCRIPT LOOM - PROPOSITION VIDÉO POUR ${companyName.toUpperCase()}**
 
-INTRO (30 secondes):
-"Bonjour, j'ai analysé votre site ${scrapeData.url} et j'ai trouvé plusieurs opportunités d'amélioration..."
+---
 
-PROBLÈMES IDENTIFIÉS (1.5 minutes):
-${scrapeData.issues.map((issue, i) => `${i+1}. ${issue}`).join('\n')}
+## 📍 **INTRO (0:00 - 0:15)**
 
-Score actuel: ${scrapeData.score}/100
+"Bonjour ! Je m'appelle [VOTRE NOM] et j'ai analysé votre site ${siteUrl}.
 
-SOLUTION (2 minutes):
-"Voici ce que nous proposons pour transformer votre site en machine de conversion..."
+J'ai identifié **${issues.length} opportunités d'amélioration** qui pourraient vous faire perdre des clients en ce moment même."
 
-CLÔTURE (30 secondes):
-"Réservez 15 minutes avec moi pour en discuter: [LIEN CALENDLY]"`;
+---
+
+## 🔍 **PROBLÈMES IDENTIFIÉS (0:15 - 1:00)**
+
+**[Montrer le site à l'écran]**
+
+"Voici ce que j'ai remarqué :
+
+${issues.map((issue, i) => `${i + 1}. **${issue}**
+   → Impact: Perte de conversions et crédibilité réduite`).join('\n\n')}
+
+Ces problèmes sont **courants** mais **facilement corrigibles**."
+
+---
+
+## ✨ **SOLUTION (1:00 - 1:45)**
+
+**[Montrer une maquette/exemple]**
+
+"Voici ce que je propose :
+
+✅ **Un site web moderne et responsive** adapté à votre image de marque
+✅ **Un chatbot IA intégré** qui répond 24/7 et qualifie vos prospects
+✅ **Un design optimisé pour la conversion** avec des CTA clairs
+✅ **Une stratégie de prospection automatisée** pour générer des leads
+
+Tout ça en gardant votre identité visuelle actuelle (vos couleurs, votre style)."
+
+---
+
+## 🎯 **CLOSING (1:45 - 2:00)**
+
+"Je vous ai préparé un **package complet** avec :
+
+📄 Un audit détaillé de votre site
+🎨 Un prototype HTML de votre nouveau site
+🤖 Le système prompt pour votre chatbot IA
+📧 Une séquence d'emails de prospection
+
+**Souhaitez-vous qu'on en discute cette semaine ?**
+
+Répondez simplement à cet email ou prenez rendez-vous sur [VOTRE LIEN CALENDLY].
+
+À très bientôt ! 🚀"
+
+---
+
+## 🎬 **NOTES DE TOURNAGE**
+
+- **Durée totale:** 2 minutes max
+- **Ton:** Professionnel mais amical
+- **Montrer:** Le site actuel + exemples de solutions
+- **CTA:** Réponse email OU rendez-vous direct`;
 }
 
-function generateEmailTemplates(scrapeData) {
-    return [
-        {
-            subject: `[PRÉNOM], j'ai analysé ${scrapeData.title}`,
-            body: `Bonjour [PRÉNOM],\n\nJ'ai remarqué quelques opportunités sur votre site...\n\nScore actuel: ${scrapeData.score}/100\n\nProblèmes: ${scrapeData.issues.join(', ')}\n\nJe peux vous aider à corriger ça. Intéressé ?\n\nCordialement`
-        },
-        {
-            subject: `📹 Package complet pour ${scrapeData.title}`,
-            body: `Bonjour [PRÉNOM],\n\nJ'ai préparé un package complet avec:\n- Audit détaillé\n- Nouveau design\n- Chatbot IA\n\nVidéo: [LIEN LOOM]\n\nQu'en pensez-vous ?`
-        },
-        {
-            subject: `Dernière chance - ${scrapeData.title}`,
-            body: `Bonjour [PRÉNOM],\n\nJe n'ai pas eu de retour...\n\nVotre site perd actuellement des leads.\n\nRéponse rapide ?`
-        }
-    ];
-}
+function generateEmailTemplates(companyName, siteUrl) {
+  return [
+    {
+      subject: `${companyName} - Opportunité d'amélioration de votre site web`,
+      body: `Bonjour,
 
-function generatePomelliBrandKit(scrapeData) {
-    return `Créez un Brand Kit pour ${scrapeData.title}
+Je me permets de vous contacter car j'ai analysé votre site ${siteUrl} et j'ai identifié plusieurs opportunités d'amélioration qui pourraient significativement augmenter vos conversions.
 
-PALETTE DE COULEURS:
-- Primaire: ${scrapeData.colors.bgColor}
-- Texte: ${scrapeData.colors.textColor}
+J'ai préparé pour vous :
+✅ Un audit complet de votre site actuel
+✅ Un prototype HTML modernisé avec vos couleurs
+✅ Un chatbot IA clé-en-main pour qualifier vos prospects 24/7
 
-ASSETS À CRÉER:
-- 5 variations de logo
-- 10 templates réseaux sociaux
-- Signatures email
-- Bannières web
+Seriez-vous disponible pour un appel de 15 minutes cette semaine ?
 
-STYLE:
-Moderne, professionnel, inspiré de l'identité actuelle mais plus impactant.`;
+Cordialement,
+[VOTRE NOM]
+
+P.S. : Je vous joins un aperçu vidéo de 2 minutes qui montre le potentiel de transformation.`
+    },
+    {
+      subject: `[Rappel] Package de transformation pour ${companyName}`,
+      body: `Bonjour,
+
+Je voulais m'assurer que vous aviez bien reçu mon premier email concernant l'amélioration de ${siteUrl}.
+
+Le package que j'ai préparé inclut :
+- Design moderne et responsive
+- Chatbot IA intégré
+- Stratégie de prospection automatisée
+
+Voici le lien vers la vidéo explicative : [LIEN LOOM]
+
+Meilleur moment pour vous cette semaine ?
+
+Cordialement,
+[VOTRE NOM]`
+    },
+    {
+      subject: `Dernier rappel - ${companyName}`,
+      body: `Bonjour,
+
+Dernier message de ma part concernant le package de transformation pour ${siteUrl}.
+
+Si le timing n'est pas le bon, pas de souci ! Je comprendrai parfaitement.
+
+Sinon, je reste à votre disposition pour échanger 15 minutes.
+
+Excellente journée !
+[VOTRE NOM]`
+    }
+  ];
 }
 
 // ================================
-// DÉMARRAGE DU SERVEUR
+// API ENDPOINTS
 // ================================
+
+// Health check
+app.get('/', (req, res) => {
+  res.json({
+    status: 'OK',
+    version: '2.0',
+    message: 'IAS Backend API - Système Complet',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: 'GET /',
+      scrapeWebsite: 'POST /api/scrape/website',
+      generatePackage: 'POST /api/generate/package',
+      getProspects: 'GET /api/prospects'
+    }
+  });
+});
+
+// Scrape website
+app.post('/api/scrape/website', async (req, res) => {
+  const { url } = req.body;
+
+  if (!url) {
+    return res.status(400).json({ error: 'URL manquante' });
+  }
+
+  console.log(`[SCRAPING] Analyse de ${url}...`);
+
+  let browser;
+  try {
+    browser = await puppeteer.launch(PUPPETEER_CONFIG);
+    const page = await browser.newPage();
+    
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // Extract data
+    const title = await page.title();
+    const colors = await extractColors(page);
+    const issues = await analyzeIssues(page);
+
+    const scrapedData = {
+      url,
+      title,
+      colors,
+      issues,
+      score: Math.max(100 - (issues.length * 10), 50),
+      timestamp: new Date().toISOString()
+    };
+
+    await browser.close();
+    
+    console.log(`[SCRAPING] ✅ Terminé ! Score: ${scrapedData.score}/100`);
+    
+    res.json(scrapedData);
+
+  } catch (error) {
+    if (browser) await browser.close();
+    console.error('[SCRAPING] Erreur:', error.message);
+    res.status(500).json({ 
+      error: 'Erreur lors du scraping', 
+      details: error.message 
+    });
+  }
+});
+
+// Generate complete package
+app.post('/api/generate/package', async (req, res) => {
+  const { url, companyName, prospectId } = req.body;
+
+  if (!url || !companyName) {
+    return res.status(400).json({ error: 'URL et nom de l\'entreprise requis' });
+  }
+
+  console.log(`[PACKAGE] Génération pour ${url}...`);
+
+  let browser;
+  try {
+    // Step 1: Scrape website
+    browser = await puppeteer.launch(PUPPETEER_CONFIG);
+    const page = await browser.newPage();
+    
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    const title = await page.title();
+    const colors = await extractColors(page);
+    const issues = await analyzeIssues(page);
+    const score = Math.max(100 - (issues.length * 10), 50);
+
+    await browser.close();
+
+    // Step 2: Generate deliverables
+    const htmlCode = generateHTMLCode(companyName, colors, url);
+    const aiPrompt = generateAISystemPrompt(companyName, url, colors);
+    const loomScript = generateLoomScript(companyName, url, issues);
+    const emailTemplates = generateEmailTemplates(companyName, url);
+
+    // Step 3: Save to Supabase
+    const packageData = {
+      prospect_id: prospectId || null,
+      target_website_url: url,
+      html_code: htmlCode,
+      ai_system_prompt: aiPrompt,
+      loom_script: loomScript,
+      email_templates: emailTemplates,
+      color_palette: { colors },
+      lead_leakages: issues,
+      audit_summary: `Site analysé: ${title}. Score: ${score}/100. ${issues.length} problèmes identifiés.`,
+      status: 'completed',
+      generation_completed_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('packages')
+      .insert([packageData])
+      .select();
+
+    if (error) throw error;
+
+    console.log(`[PACKAGE] ✅ Package créé avec succès !`);
+
+    res.json({
+      success: true,
+      message: 'Package généré avec succès',
+      package: data[0],
+      deliverables: {
+        html_code: htmlCode.substring(0, 200) + '...',
+        ai_system_prompt: aiPrompt.substring(0, 200) + '...',
+        loom_script: loomScript.substring(0, 200) + '...',
+        email_templates: emailTemplates.length
+      }
+    });
+
+  } catch (error) {
+    if (browser) await browser.close();
+    console.error('[PACKAGE] Erreur:', error.message);
+    res.status(500).json({ 
+      error: 'Erreur lors de la génération du package', 
+      details: error.message 
+    });
+  }
+});
+
+// Get all prospects
+app.get('/api/prospects', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('prospects')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      count: data.length,
+      prospects: data
+    });
+
+  } catch (error) {
+    console.error('[PROSPECTS] Erreur:', error.message);
+    res.status(500).json({ 
+      error: 'Erreur lors de la récupération des prospects', 
+      details: error.message 
+    });
+  }
+});
+
+// ================================
+// START SERVER
+// ================================
+
 app.listen(PORT, () => {
-    console.log(`
-╔════════════════════════════════════════╗
-║   IAS BACKEND API V2.0                 ║
-║   Serveur démarré sur le port ${PORT}   ║
-║                                        ║
-║   http://localhost:${PORT}             ║
-║                                        ║
-║   FONCTIONNALITÉS:                     ║
-║   ✅ Scraping Web                      ║
-║   ✅ Scraping LinkedIn                 ║
-║   ✅ Scraping Google Maps              ║
-║   ✅ Génération PDF                    ║
-║   ✅ Envoi Emails (SendGrid)           ║
-║   ✅ Enrichissement (Apollo.io)        ║
-╚════════════════════════════════════════╝
-    `);
+  console.log(`
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║              🚀 IAS BACKEND API v2.0                    ║
+║                                                          ║
+║  ✅ Serveur démarré sur le port ${PORT}                    ║
+║  🌐 URL: http://localhost:${PORT}                         ║
+║                                                          ║
+║  📚 Endpoints disponibles:                               ║
+║     GET  /                    - Health check            ║
+║     POST /api/scrape/website  - Scraper un site         ║
+║     POST /api/generate/package - Générer package        ║
+║     GET  /api/prospects       - Liste prospects         ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+  `);
 });
