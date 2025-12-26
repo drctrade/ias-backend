@@ -1,12 +1,12 @@
 // ================================
-// IAS BACKEND SERVER v2.1
-// Système Complet avec PLAYWRIGHT (plus stable sur Render)
+// IAS BACKEND SERVER v3.0 FINAL
+// Système avec Playwright + Browserless + Logs détaillés
 // ================================
 
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { chromium } = require('playwright');  // ✅ Playwright au lieu de Puppeteer
+const { chromium } = require('playwright');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -26,12 +26,14 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ik
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ================================
-// PLAYWRIGHT CONFIGURATION (AVEC BROWSERLESS)
+// PLAYWRIGHT + BROWSERLESS CONFIGURATION
 // ================================
 const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '';
 const USE_BROWSERLESS = !!BROWSERLESS_TOKEN;
-
 const BROWSER_WS_ENDPOINT = `wss://production-sfo.browserless.io?token=${BROWSERLESS_TOKEN}`;
+
+console.log(`[CONFIG] Mode: ${USE_BROWSERLESS ? 'Browserless' : 'Local'}`);
+console.log(`[CONFIG] Browserless Token: ${BROWSERLESS_TOKEN ? '✅ Configuré' : '❌ Manquant'}`);
 
 const BROWSER_CONFIG = {
   headless: true,
@@ -74,7 +76,7 @@ async function extractColors(page) {
       return Array.from(colorSet).slice(0, 10);
     });
     
-    return colors;
+    return colors.length > 0 ? colors : ['#0f204b', '#5bc236', '#ffffff', '#000000'];
   } catch (error) {
     console.error('[COLORS] Erreur:', error.message);
     return ['#0f204b', '#5bc236', '#ffffff', '#000000'];
@@ -108,10 +110,6 @@ async function analyzeIssues(page) {
         problems.push('Manque de CTA (Call-to-Action)');
       }
       
-      if (performance.timing.loadEventEnd - performance.timing.navigationStart > 3000) {
-        problems.push('Temps de chargement lent (>3s)');
-      }
-      
       return problems.length > 0 ? problems : ['Aucun problème majeur détecté'];
     });
     
@@ -121,10 +119,6 @@ async function analyzeIssues(page) {
     return ['Erreur lors de l\'analyse'];
   }
 }
-
-// ================================
-// GENERATION FUNCTIONS
-// ================================
 
 function generateHTMLCode(companyName, colors, siteUrl) {
   const primaryColor = colors[0] || '#5bc236';
@@ -161,7 +155,6 @@ function generateHTMLCode(companyName, colors, siteUrl) {
             </button>
         </div>
     </header>
-
     <section class="py-16">
         <div class="container mx-auto px-4">
             <h2 class="text-4xl font-bold text-center mb-12">Nos Services</h2>
@@ -184,27 +177,10 @@ function generateHTMLCode(companyName, colors, siteUrl) {
             </div>
         </div>
     </section>
-
-    <section class="gradient-bg text-white py-16 text-center">
-        <div class="container mx-auto px-4">
-            <h2 class="text-4xl font-bold mb-4">Prêt à Commencer ?</h2>
-            <p class="text-xl mb-8">Contactez-nous dès aujourd'hui pour un devis gratuit</p>
-            <button class="bg-white text-gray-900 px-10 py-4 rounded-full font-bold text-lg hover:scale-105 transition-transform">
-                <i class="fas fa-envelope mr-2"></i>Obtenir un Devis
-            </button>
-        </div>
-    </section>
-
     <footer class="bg-gray-900 text-white py-8 text-center">
         <p>&copy; 2025 ${companyName}. Tous droits réservés.</p>
         <p class="text-gray-400 mt-2">Site original: <a href="${siteUrl}" class="underline">${siteUrl}</a></p>
     </footer>
-
-    <div id="chatbot-widget" style="position: fixed; bottom: 20px; right: 20px; z-index: 9999;">
-        <button class="gradient-bg text-white w-16 h-16 rounded-full shadow-2xl hover:scale-110 transition-transform">
-            <i class="fas fa-comments text-2xl"></i>
-        </button>
-    </div>
 </body>
 </html>`;
 }
@@ -227,143 +203,80 @@ function generateAISystemPrompt(companyName, siteUrl, colors) {
 - Professionnel mais accessible
 - Empathique et à l'écoute
 - Orienté solution
-- Français impeccable (Canada/France selon le contexte)
+- Français impeccable
 
 **Exemples de réponses:**
-
 Visiteur: "Quels sont vos services ?"
-Toi: "Nous proposons [LISTE DES SERVICES]. Quel service vous intéresse particulièrement ? Je peux vous donner plus de détails."
+Toi: "Nous proposons [LISTE DES SERVICES]. Quel service vous intéresse particulièrement ?"
 
 Visiteur: "Combien ça coûte ?"
-Toi: "Nos tarifs varient selon vos besoins spécifiques. Puis-je vous poser quelques questions pour vous préparer un devis personnalisé ? 📋"
-
-Visiteur: "Je veux un rendez-vous"
-Toi: "Parfait ! 🎉 Je peux vous proposer [JOURS/HEURES]. Quelle plage horaire vous conviendrait le mieux ?"
+Toi: "Nos tarifs varient selon vos besoins spécifiques. Puis-je vous poser quelques questions pour vous préparer un devis personnalisé ?"
 
 **Consignes importantes:**
 ✅ Toujours être positif et encourageant
 ✅ Poser des questions ouvertes pour qualifier
 ✅ Proposer des solutions concrètes
-❌ Ne jamais dire "Je ne sais pas" (rediriger vers un humain si nécessaire)
-❌ Ne jamais donner de prix exacts sans contexte`;
+❌ Ne jamais dire "Je ne sais pas"`;
 }
 
 function generateLoomScript(companyName, siteUrl, issues) {
-  return `🎥 **SCRIPT LOOM - PROPOSITION VIDÉO POUR ${companyName.toUpperCase()}**
+  return `🎥 SCRIPT LOOM - ${companyName.toUpperCase()}
 
----
+## INTRO (0:00 - 0:15)
+"Bonjour ! J'ai analysé votre site ${siteUrl} et j'ai identifié ${issues.length} opportunités d'amélioration."
 
-## 📍 **INTRO (0:00 - 0:15)**
+## PROBLÈMES (0:15 - 1:00)
+${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
 
-"Bonjour ! Je m'appelle [VOTRE NOM] et j'ai analysé votre site ${siteUrl}.
-
-J'ai identifié **${issues.length} opportunités d'amélioration** qui pourraient vous faire perdre des clients en ce moment même."
-
----
-
-## 🔍 **PROBLÈMES IDENTIFIÉS (0:15 - 1:00)**
-
-**[Montrer le site à l'écran]**
-
-"Voici ce que j'ai remarqué :
-
-${issues.map((issue, i) => `${i + 1}. **${issue}**
-   → Impact: Perte de conversions et crédibilité réduite`).join('\n\n')}
-
-Ces problèmes sont **courants** mais **facilement corrigibles**."
-
----
-
-## ✨ **SOLUTION (1:00 - 1:45)**
-
-**[Montrer une maquette/exemple]**
-
+## SOLUTION (1:00 - 1:45)
 "Voici ce que je propose :
+✅ Un site web moderne et responsive
+✅ Un chatbot IA intégré 24/7
+✅ Un design optimisé pour la conversion
+✅ Une stratégie de prospection automatisée"
 
-✅ **Un site web moderne et responsive** adapté à votre image de marque
-✅ **Un chatbot IA intégré** qui répond 24/7 et qualifie vos prospects
-✅ **Un design optimisé pour la conversion** avec des CTA clairs
-✅ **Une stratégie de prospection automatisée** pour générer des leads
-
-Tout ça en gardant votre identité visuelle actuelle (vos couleurs, votre style)."
-
----
-
-## 🎯 **CLOSING (1:45 - 2:00)**
-
-"Je vous ai préparé un **package complet** avec :
-
-📄 Un audit détaillé de votre site
-🎨 Un prototype HTML de votre nouveau site
-🤖 Le système prompt pour votre chatbot IA
-📧 Une séquence d'emails de prospection
-
-**Souhaitez-vous qu'on en discute cette semaine ?**
-
-Répondez simplement à cet email ou prenez rendez-vous sur [VOTRE LIEN CALENDLY].
-
-À très bientôt ! 🚀"
-
----
-
-## 🎬 **NOTES DE TOURNAGE**
-
-- **Durée totale:** 2 minutes max
-- **Ton:** Professionnel mais amical
-- **Montrer:** Le site actuel + exemples de solutions
-- **CTA:** Réponse email OU rendez-vous direct`;
+## CLOSING (1:45 - 2:00)
+"Je vous ai préparé un package complet. Souhaitez-vous qu'on en discute cette semaine ?"`;
 }
 
 function generateEmailTemplates(companyName, siteUrl) {
   return [
     {
-      subject: `${companyName} - Opportunité d'amélioration de votre site web`,
+      subject: `${companyName} - Opportunité d'amélioration`,
       body: `Bonjour,
 
-Je me permets de vous contacter car j'ai analysé votre site ${siteUrl} et j'ai identifié plusieurs opportunités d'amélioration qui pourraient significativement augmenter vos conversions.
+J'ai analysé ${siteUrl} et identifié plusieurs opportunités d'amélioration pour augmenter vos conversions.
 
 J'ai préparé pour vous :
-✅ Un audit complet de votre site actuel
-✅ Un prototype HTML modernisé avec vos couleurs
-✅ Un chatbot IA clé-en-main pour qualifier vos prospects 24/7
+✅ Un audit complet
+✅ Un prototype HTML modernisé
+✅ Un chatbot IA clé-en-main
 
-Seriez-vous disponible pour un appel de 15 minutes cette semaine ?
+Seriez-vous disponible 15 minutes cette semaine ?
 
-Cordialement,
-[VOTRE NOM]
-
-P.S. : Je vous joins un aperçu vidéo de 2 minutes qui montre le potentiel de transformation.`
+Cordialement`
     },
     {
       subject: `[Rappel] Package de transformation pour ${companyName}`,
       body: `Bonjour,
 
-Je voulais m'assurer que vous aviez bien reçu mon premier email concernant l'amélioration de ${siteUrl}.
+Je voulais m'assurer que vous aviez bien reçu mon email concernant ${siteUrl}.
 
-Le package que j'ai préparé inclut :
-- Design moderne et responsive
-- Chatbot IA intégré
-- Stratégie de prospection automatisée
+Le package inclut un design moderne, un chatbot IA et une stratégie de prospection.
 
-Voici le lien vers la vidéo explicative : [LIEN LOOM]
+Meilleur moment pour vous ?
 
-Meilleur moment pour vous cette semaine ?
-
-Cordialement,
-[VOTRE NOM]`
+Cordialement`
     },
     {
       subject: `Dernier rappel - ${companyName}`,
       body: `Bonjour,
 
-Dernier message de ma part concernant le package de transformation pour ${siteUrl}.
+Dernier message concernant le package de transformation pour ${siteUrl}.
 
-Si le timing n'est pas le bon, pas de souci ! Je comprendrai parfaitement.
+Si le timing n'est pas bon, pas de souci !
 
-Sinon, je reste à votre disposition pour échanger 15 minutes.
-
-Excellente journée !
-[VOTRE NOM]`
+Excellente journée !`
     }
   ];
 }
@@ -375,15 +288,10 @@ Excellente journée !
 app.get('/', (req, res) => {
   res.json({
     status: 'OK',
-    version: '2.1 (Playwright)',
-    message: 'IAS Backend API - Système Complet avec Playwright',
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      health: 'GET /',
-      scrapeWebsite: 'POST /api/scrape/website',
-      generatePackage: 'POST /api/generate/package',
-      getProspects: 'GET /api/prospects'
-    }
+    version: '3.0',
+    message: 'IAS Backend API - FINAL',
+    mode: USE_BROWSERLESS ? 'Browserless' : 'Local',
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -394,26 +302,31 @@ app.post('/api/scrape/website', async (req, res) => {
     return res.status(400).json({ error: 'URL manquante' });
   }
 
-  console.log(`[SCRAPING] Analyse de ${url}...`);
+  console.log(`[SCRAPING] 🚀 Analyse de ${url}...`);
 
   let browser;
   try {
     if (USE_BROWSERLESS) {
-  console.log('[SCRAPING] Connexion à Browserless...');
-  browser = await chromium.connect(BROWSER_WS_ENDPOINT);
-} else {
-  console.log('[SCRAPING] Lancement de Chromium local...');
-  browser = await chromium.launch(BROWSER_CONFIG);
-}
+      console.log('[SCRAPING] 🌐 Connexion à Browserless...');
+      browser = await chromium.connect(BROWSER_WS_ENDPOINT);
+    } else {
+      console.log('[SCRAPING] 💻 Lancement de Chromium local...');
+      browser = await chromium.launch(BROWSER_CONFIG);
+    }
+
     const page = await browser.newPage();
+    console.log('[SCRAPING] 📄 Navigation vers', url);
     
     await page.goto(url, { 
-  waitUntil: 'domcontentloaded',  // Plus rapide que networkidle2
-  timeout: 120000  // 2 minutes au lieu de 30 secondes
-});
+      waitUntil: 'domcontentloaded',
+      timeout: 180000  // 3 minutes
+    });
 
+    console.log('[SCRAPING] 🎨 Extraction des couleurs...');
     const title = await page.title();
     const colors = await extractColors(page);
+    
+    console.log('[SCRAPING] 🔍 Analyse des problèmes...');
     const issues = await analyzeIssues(page);
 
     const scrapedData = {
@@ -433,7 +346,7 @@ app.post('/api/scrape/website', async (req, res) => {
 
   } catch (error) {
     if (browser) await browser.close();
-    console.error('[SCRAPING] Erreur:', error.message);
+    console.error('[SCRAPING] ❌ Erreur:', error.message);
     res.status(500).json({ 
       error: 'Erreur lors du scraping', 
       details: error.message 
@@ -445,27 +358,32 @@ app.post('/api/generate/package', async (req, res) => {
   const { url, companyName, prospectId } = req.body;
 
   if (!url || !companyName) {
-    return res.status(400).json({ error: 'URL et nom de l\'entreprise requis' });
+    return res.status(400).json({ error: 'URL et nom requis' });
   }
 
-  console.log(`[PACKAGE] Génération pour ${url}...`);
+  console.log(`[PACKAGE] 🚀 Génération pour ${url}...`);
 
   let browser;
   try {
+    console.log('[PACKAGE] 📊 Étape 1/5: Connexion au navigateur...');
+    
     if (USE_BROWSERLESS) {
-  console.log('[PACKAGE] Connexion à Browserless...');
-  browser = await chromium.connect(BROWSER_WS_ENDPOINT);
-} else {
-  console.log('[PACKAGE] Lancement de Chromium local...');
-  browser = await chromium.launch(BROWSER_CONFIG);
-}
+      console.log('[PACKAGE] 🌐 Connexion à Browserless...');
+      browser = await chromium.connect(BROWSER_WS_ENDPOINT);
+    } else {
+      console.log('[PACKAGE] 💻 Lancement de Chromium local...');
+      browser = await chromium.launch(BROWSER_CONFIG);
+    }
+
+    console.log('[PACKAGE] 📊 Étape 2/5: Scraping du site...');
     const page = await browser.newPage();
     
     await page.goto(url, { 
-  waitUntil: 'domcontentloaded',  // Plus rapide que networkidle2
-  timeout: 120000  // 2 minutes au lieu de 30 secondes
-});
+      waitUntil: 'domcontentloaded',
+      timeout: 180000
+    });
 
+    console.log('[PACKAGE] 📊 Étape 3/5: Extraction des données...');
     const title = await page.title();
     const colors = await extractColors(page);
     const issues = await analyzeIssues(page);
@@ -473,11 +391,13 @@ app.post('/api/generate/package', async (req, res) => {
 
     await browser.close();
 
+    console.log('[PACKAGE] 📊 Étape 4/5: Génération des livrables...');
     const htmlCode = generateHTMLCode(companyName, colors, url);
     const aiPrompt = generateAISystemPrompt(companyName, url, colors);
     const loomScript = generateLoomScript(companyName, url, issues);
     const emailTemplates = generateEmailTemplates(companyName, url);
 
+    console.log('[PACKAGE] 📊 Étape 5/5: Sauvegarde dans Supabase...');
     const packageData = {
       prospect_id: prospectId || null,
       target_website_url: url,
@@ -487,7 +407,7 @@ app.post('/api/generate/package', async (req, res) => {
       email_templates: emailTemplates,
       color_palette: { colors },
       lead_leakages: issues,
-      audit_summary: `Site analysé: ${title}. Score: ${score}/100. ${issues.length} problèmes identifiés.`,
+      audit_summary: `Site: ${title}. Score: ${score}/100. ${issues.length} problèmes.`,
       status: 'completed',
       generation_completed_at: new Date().toISOString()
     };
@@ -499,25 +419,26 @@ app.post('/api/generate/package', async (req, res) => {
 
     if (error) throw error;
 
-    console.log(`[PACKAGE] ✅ Package créé avec succès !`);
+    console.log('[PACKAGE] ✅ Package créé avec succès !');
 
     res.json({
       success: true,
       message: 'Package généré avec succès',
       package: data[0],
+      score: score,
       deliverables: {
         html_code: htmlCode.substring(0, 200) + '...',
         ai_system_prompt: aiPrompt.substring(0, 200) + '...',
         loom_script: loomScript.substring(0, 200) + '...',
-        email_templates: emailTemplates.length
+        emails_count: emailTemplates.length
       }
     });
 
   } catch (error) {
     if (browser) await browser.close();
-    console.error('[PACKAGE] Erreur:', error.message);
+    console.error('[PACKAGE] ❌ Erreur:', error.message);
     res.status(500).json({ 
-      error: 'Erreur lors de la génération du package', 
+      error: 'Erreur lors de la génération', 
       details: error.message 
     });
   }
@@ -541,32 +462,18 @@ app.get('/api/prospects', async (req, res) => {
   } catch (error) {
     console.error('[PROSPECTS] Erreur:', error.message);
     res.status(500).json({ 
-      error: 'Erreur lors de la récupération des prospects', 
+      error: 'Erreur prospects', 
       details: error.message 
     });
   }
 });
 
-// ================================
-// START SERVER
-// ================================
-
 app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║              🚀 IAS BACKEND API v2.1                    ║
-║              (Powered by Playwright)                     ║
-║                                                          ║
+║              🚀 IAS BACKEND API v3.0 FINAL              ║
 ║  ✅ Serveur démarré sur le port ${PORT}                    ║
-║  🌐 URL: http://localhost:${PORT}                         ║
-║                                                          ║
-║  📚 Endpoints disponibles:                               ║
-║     GET  /                    - Health check            ║
-║     POST /api/scrape/website  - Scraper un site         ║
-║     POST /api/generate/package - Générer package        ║
-║     GET  /api/prospects       - Liste prospects         ║
-║                                                          ║
+║  🌐 Mode: ${USE_BROWSERLESS ? 'Browserless ✅' : 'Local ⚠️'}                            ║
 ╚══════════════════════════════════════════════════════════╝
   `);
 });
