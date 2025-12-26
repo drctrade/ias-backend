@@ -26,15 +26,25 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ik
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ================================
-// PLAYWRIGHT CONFIGURATION (OPTIMISÉ RENDER)
+// PLAYWRIGHT CONFIGURATION (AVEC BROWSERLESS)
 // ================================
+const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '';
+const USE_BROWSERLESS = !!BROWSERLESS_TOKEN;
+
+const BROWSER_WS_ENDPOINT = `wss://production-sfo.browserless.io?token=${BROWSERLESS_TOKEN}`;
+
 const BROWSER_CONFIG = {
   headless: true,
   args: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
-    '--disable-gpu'
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--disable-extensions'
   ]
 };
 
@@ -388,7 +398,13 @@ app.post('/api/scrape/website', async (req, res) => {
 
   let browser;
   try {
-    browser = await chromium.launch(BROWSER_CONFIG);
+    if (USE_BROWSERLESS) {
+  console.log('[SCRAPING] Connexion à Browserless...');
+  browser = await chromium.connect(BROWSER_WS_ENDPOINT);
+} else {
+  console.log('[SCRAPING] Lancement de Chromium local...');
+  browser = await chromium.launch(BROWSER_CONFIG);
+}
     const page = await browser.newPage();
     
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
@@ -433,7 +449,13 @@ app.post('/api/generate/package', async (req, res) => {
 
   let browser;
   try {
-    browser = await chromium.launch(BROWSER_CONFIG);
+    if (USE_BROWSERLESS) {
+  console.log('[PACKAGE] Connexion à Browserless...');
+  browser = await chromium.connect(BROWSER_WS_ENDPOINT);
+} else {
+  console.log('[PACKAGE] Lancement de Chromium local...');
+  browser = await chromium.launch(BROWSER_CONFIG);
+}
     const page = await browser.newPage();
     
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
