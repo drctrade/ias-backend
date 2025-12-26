@@ -2,15 +2,10 @@ services:
   - type: web
     name: ias-backend
     runtime: node
-    buildCommand: |
-      npm install
-      apt-get update
-      apt-get install -y chromium-browser
+    buildCommand: npm install && npx @puppeteer/browsers install chrome@stable --path /opt/render/project/.chrome
     startCommand: npm start
     envVars:
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /opt/render/project/.chrome/chrome/linux-131.0.6778.108/chrome-linux64/chrome
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: 'true'
-      - key: CHROME_BIN
-        value: /usr/bin/chromium-browser
-      - key: NODE_ENV
-        value: production
