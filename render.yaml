@@ -2,10 +2,44 @@ services:
   - type: web
     name: ias-backend
     runtime: node
-    buildCommand: npm install && npx @puppeteer/browsers install chrome@stable --path /opt/render/project/.chrome
+    # IMPORTANT: Installer les dépendances système AVANT Puppeteer
+    buildCommand: |
+      apt-get update && apt-get install -y \
+        wget \
+        ca-certificates \
+        fonts-liberation \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libatk1.0-0 \
+        libatspi2.0-0 \
+        libcups2 \
+        libdbus-1-3 \
+        libdrm2 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnspr4 \
+        libnss3 \
+        libwayland-client0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxkbcommon0 \
+        libxrandr2 \
+        xdg-utils \
+        && npm install \
+        && npx @puppeteer/browsers install chrome@stable --path /opt/render/project/.cache/puppeteer
+    
     startCommand: npm start
+    
     envVars:
-      - key: PUPPETEER_EXECUTABLE_PATH
-        value: /opt/render/project/.chrome/chrome/linux-131.0.6778.108/chrome-linux64/chrome
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: 'true'
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /opt/render/project/.cache/puppeteer/chrome/linux-131.0.6778.108/chrome-linux64/chrome
+      - key: PUPPETEER_CACHE_DIR
+        value: /opt/render/project/.cache/puppeteer
+      - key: NODE_ENV
+        value: production
+
+    # Augmenter les ressources (Chrome est gourmand)
+    plan: starter  # ou higher selon vos besoins

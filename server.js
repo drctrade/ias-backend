@@ -1,12 +1,12 @@
 // ================================
-// IAS BACKEND SERVER v2.0
-// Système Complet : Scraping + PDF + Emails
+// IAS BACKEND SERVER v2.1
+// Système Complet avec PLAYWRIGHT (plus stable sur Render)
 // ================================
 
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');  // ✅ Playwright au lieu de Puppeteer
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -26,29 +26,22 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ik
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ================================
-// PUPPETEER CONFIGURATION FOR RENDER
+// PLAYWRIGHT CONFIGURATION (OPTIMISÉ RENDER)
 // ================================
-const PUPPETEER_CONFIG = {
+const BROWSER_CONFIG = {
   headless: true,
   args: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
-    '--disable-accelerated-2d-canvas',
-    '--no-first-run',
-    '--no-zygote',
-    '--disable-gpu',
-    '--disable-software-rasterizer',
-    '--disable-extensions'
-  ],
-  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
+    '--disable-gpu'
+  ]
 };
 
 // ================================
 // UTILITY FUNCTIONS
 // ================================
 
-// Fonction pour extraire les couleurs d'un site web
 async function extractColors(page) {
   try {
     const colors = await page.evaluate(() => {
@@ -78,18 +71,15 @@ async function extractColors(page) {
   }
 }
 
-// Fonction pour analyser les problèmes d'un site
 async function analyzeIssues(page) {
   try {
     const issues = await page.evaluate(() => {
       const problems = [];
       
-      // Check mobile responsiveness
       if (!document.querySelector('meta[name="viewport"]')) {
         problems.push('Site non-responsive (pas de meta viewport)');
       }
       
-      // Check for chatbot
       const hasChatbot = document.querySelector('[class*="chat"]') || 
                         document.querySelector('[id*="chat"]') ||
                         document.querySelector('iframe[src*="chat"]');
@@ -97,20 +87,17 @@ async function analyzeIssues(page) {
         problems.push('Pas de chatbot IA');
       }
       
-      // Check design age
       const hasModernCSS = document.querySelector('link[href*="tailwind"]') ||
                           document.querySelector('link[href*="bootstrap"]');
       if (!hasModernCSS) {
         problems.push('Design potentiellement obsolète');
       }
       
-      // Check CTA buttons
       const ctaButtons = document.querySelectorAll('a[href*="contact"], button[class*="cta"], a[class*="button"]');
       if (ctaButtons.length < 2) {
         problems.push('Manque de CTA (Call-to-Action)');
       }
       
-      // Check loading speed
       if (performance.timing.loadEventEnd - performance.timing.navigationStart > 3000) {
         problems.push('Temps de chargement lent (>3s)');
       }
@@ -155,7 +142,6 @@ function generateHTMLCode(companyName, colors, siteUrl) {
     </style>
 </head>
 <body class="bg-gray-50">
-    <!-- Header -->
     <header class="gradient-bg text-white py-20">
         <div class="container mx-auto px-4 text-center">
             <h1 class="text-5xl font-bold mb-4">${companyName}</h1>
@@ -166,7 +152,6 @@ function generateHTMLCode(companyName, colors, siteUrl) {
         </div>
     </header>
 
-    <!-- Services -->
     <section class="py-16">
         <div class="container mx-auto px-4">
             <h2 class="text-4xl font-bold text-center mb-12">Nos Services</h2>
@@ -190,7 +175,6 @@ function generateHTMLCode(companyName, colors, siteUrl) {
         </div>
     </section>
 
-    <!-- CTA -->
     <section class="gradient-bg text-white py-16 text-center">
         <div class="container mx-auto px-4">
             <h2 class="text-4xl font-bold mb-4">Prêt à Commencer ?</h2>
@@ -201,13 +185,11 @@ function generateHTMLCode(companyName, colors, siteUrl) {
         </div>
     </section>
 
-    <!-- Footer -->
     <footer class="bg-gray-900 text-white py-8 text-center">
         <p>&copy; 2025 ${companyName}. Tous droits réservés.</p>
         <p class="text-gray-400 mt-2">Site original: <a href="${siteUrl}" class="underline">${siteUrl}</a></p>
     </footer>
 
-    <!-- AI Chatbot Widget -->
     <div id="chatbot-widget" style="position: fixed; bottom: 20px; right: 20px; z-index: 9999;">
         <button class="gradient-bg text-white w-16 h-16 rounded-full shadow-2xl hover:scale-110 transition-transform">
             <i class="fas fa-comments text-2xl"></i>
@@ -380,12 +362,11 @@ Excellente journée !
 // API ENDPOINTS
 // ================================
 
-// Health check
 app.get('/', (req, res) => {
   res.json({
     status: 'OK',
-    version: '2.0',
-    message: 'IAS Backend API - Système Complet',
+    version: '2.1 (Playwright)',
+    message: 'IAS Backend API - Système Complet avec Playwright',
     timestamp: new Date().toISOString(),
     endpoints: {
       health: 'GET /',
@@ -396,7 +377,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// Scrape website
 app.post('/api/scrape/website', async (req, res) => {
   const { url } = req.body;
 
@@ -408,12 +388,11 @@ app.post('/api/scrape/website', async (req, res) => {
 
   let browser;
   try {
-    browser = await puppeteer.launch(PUPPETEER_CONFIG);
+    browser = await chromium.launch(BROWSER_CONFIG);
     const page = await browser.newPage();
     
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
 
-    // Extract data
     const title = await page.title();
     const colors = await extractColors(page);
     const issues = await analyzeIssues(page);
@@ -443,7 +422,6 @@ app.post('/api/scrape/website', async (req, res) => {
   }
 });
 
-// Generate complete package
 app.post('/api/generate/package', async (req, res) => {
   const { url, companyName, prospectId } = req.body;
 
@@ -455,11 +433,10 @@ app.post('/api/generate/package', async (req, res) => {
 
   let browser;
   try {
-    // Step 1: Scrape website
-    browser = await puppeteer.launch(PUPPETEER_CONFIG);
+    browser = await chromium.launch(BROWSER_CONFIG);
     const page = await browser.newPage();
     
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
 
     const title = await page.title();
     const colors = await extractColors(page);
@@ -468,13 +445,11 @@ app.post('/api/generate/package', async (req, res) => {
 
     await browser.close();
 
-    // Step 2: Generate deliverables
     const htmlCode = generateHTMLCode(companyName, colors, url);
     const aiPrompt = generateAISystemPrompt(companyName, url, colors);
     const loomScript = generateLoomScript(companyName, url, issues);
     const emailTemplates = generateEmailTemplates(companyName, url);
 
-    // Step 3: Save to Supabase
     const packageData = {
       prospect_id: prospectId || null,
       target_website_url: url,
@@ -520,7 +495,6 @@ app.post('/api/generate/package', async (req, res) => {
   }
 });
 
-// Get all prospects
 app.get('/api/prospects', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -553,7 +527,8 @@ app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
-║              🚀 IAS BACKEND API v2.0                    ║
+║              🚀 IAS BACKEND API v2.1                    ║
+║              (Powered by Playwright)                     ║
 ║                                                          ║
 ║  ✅ Serveur démarré sur le port ${PORT}                    ║
 ║  🌐 URL: http://localhost:${PORT}                         ║
