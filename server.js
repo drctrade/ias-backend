@@ -407,7 +407,10 @@ app.post('/api/scrape/website', async (req, res) => {
 }
     const page = await browser.newPage();
     
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto(url, { 
+  waitUntil: 'domcontentloaded',  // Plus rapide que networkidle2
+  timeout: 120000  // 2 minutes au lieu de 30 secondes
+});
 
     const title = await page.title();
     const colors = await extractColors(page);
@@ -458,7 +461,10 @@ app.post('/api/generate/package', async (req, res) => {
 }
     const page = await browser.newPage();
     
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto(url, { 
+  waitUntil: 'domcontentloaded',  // Plus rapide que networkidle2
+  timeout: 120000  // 2 minutes au lieu de 30 secondes
+});
 
     const title = await page.title();
     const colors = await extractColors(page);
