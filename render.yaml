@@ -15,3 +15,5 @@ services:
         sync: false
       - key: GHL_API_KEY
         sync: false
+      - key: APIFY_TOKEN
+        sync: false
