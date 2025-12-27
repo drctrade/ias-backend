@@ -2,10 +2,16 @@ services:
   - type: web
     name: ias-backend
     runtime: node
-    buildCommand: npm ci
+    buildCommand: npm install && npx playwright install chromium
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
       - key: BROWSERLESS_TOKEN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: GHL_API_KEY
         sync: false
