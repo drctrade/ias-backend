@@ -317,10 +317,23 @@ app.post('/api/scrape/website', async (req, res) => {
     const page = await browser.newPage();
     console.log('[SCRAPING] 📄 Navigation vers', url);
     
+    // OPTIMISATION: Sites lourds -> bloquer images/CSS/fonts
+    await page.route('**/*', (route) => {
+      const resourceType = route.request().resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+        route.abort();
+      } else {
+        route.continue();
+      }
+    });
+    
     await page.goto(url, { 
       waitUntil: 'domcontentloaded',
-      timeout: 180000  // 3 minutes
+      timeout: 90000  // 90 secondes (réduit de 3 min)
     });
+    
+    // Attendre 2 secondes pour que JS s'exécute
+    await page.waitForTimeout(2000);
 
     console.log('[SCRAPING] 🎨 Extraction des couleurs...');
     const title = await page.title();
@@ -378,10 +391,22 @@ app.post('/api/generate/package', async (req, res) => {
     console.log('[PACKAGE] 📊 Étape 2/5: Scraping du site...');
     const page = await browser.newPage();
     
+    // OPTIMISATION: Bloquer ressources lourdes
+    await page.route('**/*', (route) => {
+      const resourceType = route.request().resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+        route.abort();
+      } else {
+        route.continue();
+      }
+    });
+    
     await page.goto(url, { 
       waitUntil: 'domcontentloaded',
-      timeout: 180000
+      timeout: 90000  // 90 secondes
     });
+    
+    await page.waitForTimeout(2000);
 
     console.log('[PACKAGE] 📊 Étape 3/5: Extraction des données...');
     const title = await page.title();
