@@ -1,7 +1,7 @@
 {
   "name": "ias-backend",
-  "version": "3.5.0",
-  "description": "IAS Backend API - Stealth Engine powered by Apify",
+  "version": "3.7.1",
+  "description": "IAS Backend API ULTIMATE - Playwright + Browserless + Apify",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
