@@ -1,6 +1,6 @@
 // ==========================================
-// IAS BACKEND SERVER v3.6 PRO - STEALTH ENGINE
-// Browserless + Apify + Supabase + Ultra-Logging
+// IAS BACKEND SERVER v3.7.1 ULTIMATE
+// Robust Connection + Apify + Supabase + Anti-Timeout
 // ==========================================
 
 const express = require('express');
@@ -61,21 +61,43 @@ async function runApifyScraper(query, city) {
 // ==========================================
 
 async function analyzeSite(page) {
-    iasLog('PLAYWRIGHT', 'Exécution de l\'analyse DOM...');
+    iasLog('PLAYWRIGHT', 'Exécution de l\'analyse DOM approfondie...');
     return await page.evaluate(() => {
         const getColors = () => {
             const colors = new Set();
-            const elements = Array.from(document.querySelectorAll('*')).slice(0, 100);
-            elements.forEach(el => {
-                const style = window.getComputedStyle(el);
-                if (style.backgroundColor && !style.backgroundColor.includes('rgba(0, 0, 0, 0)')) colors.add(style.backgroundColor);
-            });
+            try {
+                const elements = Array.from(document.querySelectorAll('*')).slice(0, 150);
+                elements.forEach(el => {
+                    const style = window.getComputedStyle(el);
+                    const bg = style.backgroundColor;
+                    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+                        colors.add(bg);
+                    }
+                });
+            } catch (e) {}
             return Array.from(colors).slice(0, 5);
         };
+
         const issues = [];
-        if (!document.querySelector('iframe[src*="chat"], [class*="chat"]')) issues.push("Aucun agent conversationnel détecté.");
-        if (!document.querySelector('form')) issues.push("Pas de formulaire de capture direct.");
-        return { colors: getColors(), issues, title: document.title };
+        // Lead Leakage Check
+        if (!document.querySelector('iframe[src*="chat"], [class*="chat"], [id*="chat"], [class*="widget"]')) {
+            issues.push("Absence d'agent conversationnel IA 24/7 (Perte de conversion)");
+        }
+        if (!document.querySelector('form, input[type="email"]')) {
+            issues.push("Manque de formulaire de capture direct (Lead Leakage)");
+        }
+        if (!document.querySelector('meta[name="viewport"]')) {
+            issues.push("Site non optimisé pour mobile (Pénalité Google)");
+        }
+        if (document.title.length < 10) {
+            issues.push("SEO Faible : Titre de page non optimisé pour les moteurs de recherche");
+        }
+
+        return { 
+            colors: getColors(), 
+            issues: issues.length > 0 ? issues : ["Optimisation mineure de l'engagement requise"], 
+            title: document.title 
+        };
     });
 }
 
@@ -83,14 +105,14 @@ async function analyzeSite(page) {
 // ROUTES API
 // ==========================================
 
-app.get('/', (req, res) => res.send('IAS PRO v3.6 ONLINE'));
+app.get('/', (req, res) => res.send('IAS PRO v3.7.1 ULTIMATE ONLINE'));
 
 // 1. PROSPECTION (APIFY)
 app.post('/api/scrape/launch', async (req, res) => {
     const { query, city } = req.body;
     iasLog('API', `Requête de prospection reçue: ${query}`);
     
-    res.json({ success: true, message: "Le moteur Apify est en route." });
+    res.json({ success: true, message: "Le moteur Apify a démarré la prospection." });
 
     try {
         const prospects = await runApifyScraper(query, city);
@@ -109,24 +131,41 @@ app.post('/api/generate/package', async (req, res) => {
     iasLog('UPGRADE', `Lancement de l'upgrade pour ${companyName} (${url})`);
 
     let browser;
+    let retryCount = 0;
+    const maxRetries = 2;
+    const wsEndpoint = `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`;
+
+    const connectWithRetry = async () => {
+        try {
+            iasLog('UPGRADE', `Tentative de connexion #${retryCount + 1} à Browserless...`);
+            return await chromium.connect(wsEndpoint, { timeout: 60000 }); 
+        } catch (err) {
+            if (retryCount < maxRetries) {
+                retryCount++;
+                iasLog('UPGRADE', `Échec connexion. Nouvelle tentative dans 3s...`);
+                await new Promise(r => setTimeout(r, 3000));
+                return await connectWithRetry();
+            }
+            throw err;
+        }
+    };
+
     try {
-        const wsEndpoint = `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`;
-        iasLog('UPGRADE', 'Tentative de connexion à Browserless...');
-        
-        // Timeout de connexion de 30 secondes
-        browser = await chromium.connect(wsEndpoint, { timeout: 30000 });
-        iasLog('UPGRADE', '✅ Connexion établie avec Browserless.');
+        browser = await connectWithRetry();
+        iasLog('UPGRADE', '✅ Connexion établie avec succès.');
 
         const page = await browser.newPage();
         iasLog('UPGRADE', `Navigation vers ${url}...`);
         
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
-        iasLog('UPGRADE', 'Page chargée. Démarrage de l\'audit.');
+        await page.goto(url, { waitUntil: 'load', timeout: 70000 });
+        await page.waitForTimeout(4000); 
+        
+        iasLog('UPGRADE', 'Page chargée. Démarrage de l\'audit Stealth.');
 
         const audit = await analyzeSite(page);
-        const score = Math.max(100 - (audit.issues.length * 20), 30);
+        const score = Math.max(100 - (audit.issues.length * 15), 30);
 
-        iasLog('UPGRADE', `Analyse terminée. Score: ${score}/100`);
+        iasLog('UPGRADE', `Analyse terminée. Score calculé: ${score}/100`);
 
         const packageData = {
             target_website_url: url,
@@ -134,37 +173,42 @@ app.post('/api/generate/package', async (req, res) => {
             lead_leakages: audit.issues,
             color_palette: audit.colors,
             score: score,
-            loom_script: `Hey ${companyName}, j'ai vu votre site...`,
-            ai_system_prompt: `Tu es l'agent expert de ${companyName}.`,
+            loom_script: `Hey ${companyName}, j'ai pris la liberté d'analyser votre site web...\n\nPoints critiques identifiés :\n${audit.issues.join('\n')}\n\nJ'ai construit une version optimisée pour vous, incluant un agent IA capable de capturer vos leads 24h/24.`,
+            ai_system_prompt: `Tu es l'Expert de Croissance de ${companyName}. Ton but unique est de convertir les visiteurs de ${url} en rendez-vous confirmés. Ton ton est professionnel, premium et direct. Ne laisse jamais un visiteur partir sans avoir collecté son besoin.`,
             status: 'completed'
         };
 
         const { data, error } = await supabase.from('packages').insert([packageData]).select();
         if (error) throw error;
 
-        // Sync score prospect
         await supabase.from('prospects').update({ score: score }).eq('company_name', companyName);
 
-        iasLog('UPGRADE', '✅ Package sauvegardé avec succès.');
+        iasLog('UPGRADE', '✅ Package complet sauvegardé dans Supabase.');
         res.json({ success: true, package: data[0] });
 
     } catch (err) {
-        iasLog('CRITICAL-ERROR', err.message);
-        res.status(500).json({ error: "Erreur critique : " + err.message });
+        iasLog('CRITICAL-ERROR', `Échec de l'upgrade: ${err.message}`);
+        res.status(500).json({ error: "Erreur lors de la génération du package: " + err.message });
     } finally {
         if (browser) {
             await browser.close();
-            iasLog('UPGRADE', 'Session navigateur fermée.');
+            iasLog('UPGRADE', 'Session de navigation fermée proprement.');
         }
     }
 });
 
 // 3. RECUPÉRATION PROSPECTS
 app.get('/api/prospects', async (req, res) => {
-    const { data } = await supabase.from('prospects').select('*').order('created_at', { ascending: false });
-    res.json(data || []);
+    try {
+        const { data, error } = await supabase.from('prospects').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        res.json(data || []);
+    } catch (err) {
+        iasLog('DATABASE-ERROR', err.message);
+        res.status(500).json({ error: "Impossible de charger les prospects." });
+    }
 });
 
 app.listen(PORT, () => {
-    iasLog('SYSTEM', `IAS Engine Pro v3.6 démarré sur le port ${PORT}`);
+    iasLog('SYSTEM', `IAS Engine Pro v3.7.1 ULTIMATE démarré sur le port ${PORT}`);
 });
