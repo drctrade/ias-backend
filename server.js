@@ -1,6 +1,6 @@
 // ==========================================
-// IAS BACKEND SERVER v3.8 - MISSION CONTROL
-// Système Haute-Visibilité & Tâches Isolées
+// IAS BACKEND SERVER v3.8.1 - ULTIMATE PRO
+// Browserless + Apify + Supabase + Health Check
 // ==========================================
 
 const express = require('express');
@@ -14,37 +14,39 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuration
+// Services
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const apifyClient = new ApifyClient({ token: process.env.APIFY_TOKEN });
 
 app.use(cors());
 app.use(bodyParser.json());
 
-// Fonction de log forcée (évite le buffering de Render)
+// Log forcé pour Render
 const iasTaskLog = (task, message) => {
-    const time = new Date().toISOString().split('T')[1].split('.')[0];
+    const time = new Date().toLocaleTimeString();
     console.log(`[${time}] [${task.toUpperCase()}] >>> ${message}`);
 };
 
 // ==========================================
-// LOGIQUE D'ANALYSE DÉTAILLÉE (SOP IAS)
-// ================================
+// MOTEUR D'UPGRADE (SOP ANALYSIS)
+// ==========================================
 
 async function runSopAnalysis(page, companyName, url) {
-    iasTaskLog('sop', 'Démarrage de l\'audit structurel...');
-    
+    iasTaskLog('sop', 'Démarrage de l\'audit de conversion...');
     return await page.evaluate((cName, cUrl) => {
-        // 1. Audit "Lead Leakage"
         const issues = [];
-        if (!document.querySelector('iframe[src*="chat"], [class*="chat"]')) issues.push("Perte de leads : Aucun agent de conversion 24/7 détecté.");
-        if (!document.querySelector('form')) issues.push("Fuite de revenus : Manque de formulaire de capture direct.");
-        if (!document.querySelector('meta[name="viewport"]')) issues.push("Pénalité Mobile : Site non-responsive (Loi 25 / Google).");
+        if (!document.querySelector('iframe[src*="chat"], [class*="chat"], [id*="chat"]')) {
+            issues.push("Pas d'agent IA 24/7 : Perte de leads qualifiés la nuit et le week-end.");
+        }
+        if (!document.querySelector('form, input[type="email"]')) {
+            issues.push("Lead Leakage : Aucun formulaire de capture direct détecté en page d'accueil.");
+        }
+        if (!document.querySelector('meta[name="viewport"]')) {
+            issues.push("Conformité Mobile : Site non-optimisé (Risque de pénalité Google / Loi 25).");
+        }
 
-        // 2. Extraction Identité (Palette)
         const colors = new Set();
-        const elms = Array.from(document.querySelectorAll('*')).slice(0, 100);
-        elms.forEach(el => {
+        Array.from(document.querySelectorAll('*')).slice(0, 100).forEach(el => {
             const style = window.getComputedStyle(el);
             if (style.backgroundColor && style.backgroundColor !== 'rgba(0, 0, 0, 0)') colors.add(style.backgroundColor);
         });
@@ -52,7 +54,7 @@ async function runSopAnalysis(page, companyName, url) {
         return {
             company_name: cName,
             target_website_url: cUrl,
-            lead_leakages: issues.length > 0 ? issues : ["Optimisation de la vitesse requise."],
+            lead_leakages: issues.length > 0 ? issues : ["Optimisation de l'engagement client recommandée."],
             color_palette: Array.from(colors).slice(0, 5),
             score: Math.max(100 - (issues.length * 20), 40)
         };
@@ -63,92 +65,76 @@ async function runSopAnalysis(page, companyName, url) {
 // ROUTES API
 // ==========================================
 
-app.get('/api/health', (req, res) => {
-    iasTaskLog('system', 'Health Check reçu.');
-    res.json({ status: 'active', version: '3.8', time: new Date() });
-});
+// 1. Health Check
+app.get('/api/health', (req, res) => res.json({ status: 'online', version: '3.8.1' }));
 
-app.post('/api/generate/package', async (req, res) => {
-    const { url, companyName } = req.body;
-    iasTaskLog('engine', `COMMANDE REÇUE : Upgrade pour ${companyName}`);
-
-    if (!url || !companyName) return res.status(400).json({ error: "Données incomplètes" });
-
-    let browser;
-    try {
-        const wsEndpoint = `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`;
-        iasTaskLog('browser', 'Connexion au cluster Browserless...');
-        
-        browser = await chromium.connect(wsEndpoint, { timeout: 45000 });
-        iasTaskLog('browser', '✅ Session établie.');
-
-        const context = await browser.newContext();
-        const page = await context.newPage();
-
-        iasTaskLog('navigation', `Cible : ${url}`);
-        await page.goto(url, { waitUntil: 'load', timeout: 60000 });
-        iasTaskLog('navigation', '✅ Page source chargée.');
-
-        // Exécution du SOP
-        const result = await runSopAnalysis(page, companyName, url);
-        iasTaskLog('sop', `Analyse terminée. Score: ${result.score}%`);
-
-        // Génération des Livrables IA (Stealth logic)
-        result.loom_script = `Hey ${companyName}, j'ai analysé votre site ${url}. J'ai remarqué que vous perdez des opportunités car...`;
-        result.ai_system_prompt = `Tu es l'Expert de Croissance pour ${companyName}. Ton rôle est de capturer les leads sur ${url}.`;
-        result.status = 'completed';
-
-        iasTaskLog('database', 'Enregistrement du package...');
-        const { data, error } = await supabase.from('packages').insert([result]).select();
-        if (error) throw error;
-
-        // Sync Dashboard
-        await supabase.from('prospects').upsert([{ 
-            company_name: companyName, 
-            website_url: url, 
-            score: result.score,
-            status: 'upgraded'
-        }], { onConflict: 'company_name' });
-
-        iasTaskLog('engine', '🎯 MISSION ACCOMPLIE.');
-        res.json({ success: true, package: data[0] });
-
-    } catch (err) {
-        iasTaskLog('error', `ÉCHEC : ${err.message}`);
-        res.status(500).json({ error: err.message });
-    } finally {
-        if (browser) await browser.close();
-    }
-});
-
-app.get('/api/prospects', async (req, res) => {
-    const { data } = await supabase.from('prospects').select('*').order('created_at', { ascending: false });
-    res.json(data || []);
-});
-
-// Route Prospection Apify
+// 2. Prospection Apify (Google Maps & LinkedIn)
 app.post('/api/scrape/launch', async (req, res) => {
     const { query, city } = req.body;
-    iasTaskLog('apify', `Lancement Prospection : ${query} @ ${city}`);
-    res.json({ success: true, message: "Tâche déléguée à Apify." });
-    
+    iasTaskLog('apify', `COMMANDE : Recherche "${query}" à ${city}`);
+    res.json({ success: true, message: "Moteur Apify activé." });
+
     try {
         const run = await apifyClient.actor("apify/google-maps-scraper").call({
             queries: [`${query} in ${city}`],
-            maxResults: 10,
+            maxResults: 15,
         });
         const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
         for (const item of items) {
             await supabase.from('prospects').upsert([{
                 company_name: item.title,
                 website_url: item.website || "",
-                status: 'new'
+                status: 'pending'
             }], { onConflict: 'company_name' });
         }
-        iasTaskLog('apify', `${items.length} prospects importés.`);
+        iasTaskLog('apify', `${items.length} prospects ajoutés.`);
     } catch (e) {
         iasTaskLog('apify-error', e.message);
     }
 });
 
-app.listen(PORT, () => iasTaskLog('system', `Moteur IAS v3.8 en ligne sur le port ${PORT}`));
+// 3. Stealth Upgrade (Browserless)
+app.post('/api/generate/package', async (req, res) => {
+    const { url, companyName } = req.body;
+    iasTaskLog('engine', `COMMANDE : Upgrade pour ${companyName}`);
+
+    let browser;
+    try {
+        const ws = `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`;
+        browser = await chromium.connect(ws, { timeout: 60000 });
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        
+        iasTaskLog('navigation', `Accès à ${url}...`);
+        await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+        
+        const result = await runSopAnalysis(page, companyName, url);
+        result.loom_script = `Bonjour ${companyName}, j'ai analysé votre site et voici pourquoi vous perdez des clients...`;
+        result.ai_system_prompt = `Tu es l'agent IA de ${companyName}. Ton but est de collecter les contacts.`;
+        result.status = 'completed';
+
+        const { data, error } = await supabase.from('packages').insert([result]).select();
+        if (error) throw error;
+
+        await supabase.from('prospects').upsert([{ 
+            company_name: companyName, website_url: url, score: result.score, status: 'upgraded' 
+        }], { onConflict: 'company_name' });
+
+        iasTaskLog('engine', 'MISSION TERMINEE.');
+        res.json({ success: true, package: data[0] });
+
+    } catch (err) {
+        iasTaskLog('error', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (browser) await browser.close();
+    }
+});
+
+// 4. Liste prospects
+app.get('/api/prospects', async (req, res) => {
+    const { data } = await supabase.from('prospects').select('*').order('created_at', { ascending: false });
+    res.json(data || []);
+});
+
+app.listen(PORT, () => iasTaskLog('system', `Ready on ${PORT}`));
