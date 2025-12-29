@@ -1,23 +1,34 @@
 {
-  "name": "ias-backend",
-  "version": "3.7.1",
-  "description": "IAS Backend API ULTIMATE - Playwright + Browserless + Apify",
+  "name": "ias-upgrade-system",
+  "version": "4.0.0",
+  "description": "IAS Stealth Upgrade System - Génération automatique de packages d'audit complets",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node server.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
-    "apify-client": "^2.9.0",
-    "axios": "^1.6.2",
+    "@supabase/supabase-js": "^2.45.0",
+    "axios": "^1.7.2",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "playwright": "^1.40.1"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "openai": "^4.52.0",
+    "pdfkit": "^0.15.0",
+    "puppeteer": "^22.12.0",
+    "uuid": "^10.0.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "keywords": [
+    "audit",
+    "website",
+    "scraping",
+    "ai",
+    "automation"
+  ],
+  "author": "IAS",
+  "license": "MIT"
 }
