@@ -39,6 +39,7 @@ console.log(`[Backend] Supabase: ${SUPABASE_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`[Backend] Gemini: ${GEMINI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`[Backend] OpenAI: ${OPENAI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 
+// Puppeteer utilise automatiquement le Chrome téléchargé lors de npm install
 const PUPPETEER_CONFIG = {
   headless: true,
   args: [
@@ -51,10 +52,8 @@ const PUPPETEER_CONFIG = {
     '--disable-gpu',
     '--disable-software-rasterizer',
     '--disable-extensions'
-  ],
-  executablePath: process.env.NODE_ENV === 'production' 
-    ? '/usr/bin/chromium-browser' 
-    : undefined
+  ]
+  // PAS de executablePath - Puppeteer le trouve automatiquement
 };
 
 // ================================
