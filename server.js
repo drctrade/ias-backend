@@ -51,7 +51,10 @@ const PUPPETEER_CONFIG = {
     '--disable-gpu',
     '--disable-software-rasterizer',
     '--disable-extensions'
-  ]
+  ],
+  executablePath: process.env.NODE_ENV === 'production' 
+    ? '/usr/bin/chromium-browser' 
+    : undefined
 };
 
 // ================================
