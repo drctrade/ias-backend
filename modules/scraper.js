@@ -1,106 +1,57 @@
 // ================================
 // MODULE SCRAPER - Analyse de sites web
-// Utilise Browserless pour le scraping
+// Utilise Firecrawl pour le scraping
 // ================================
 
-const { chromium } = require('playwright');
+const Firecrawl = require('@mendable/firecrawl-js').default;
 
-// Configuration Browserless
-const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '';
-const BROWSER_WS_ENDPOINT = BROWSERLESS_TOKEN 
-  ? `wss://production-sfo.browserless.io?token=${BROWSERLESS_TOKEN}`
-  : null;
+// Configuration Firecrawl
+const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || '';
 
 /**
  * Scrape un site web et extrait les données pertinentes
  */
 async function scrapeWebsite(url) {
-  let browser = null;
-  
   try {
-    console.log('[SCRAPER] Connexion a Browserless...');
+    console.log('[SCRAPER] Connexion a Firecrawl...');
     
-    if (!BROWSER_WS_ENDPOINT) {
-      throw new Error('BROWSERLESS_TOKEN manquant');
+    if (!FIRECRAWL_API_KEY) {
+      throw new Error('FIRECRAWL_API_KEY manquant');
     }
     
-    console.log('[SCRAPER] WebSocket endpoint:', BROWSER_WS_ENDPOINT);
+    const app = new Firecrawl({ apiKey: FIRECRAWL_API_KEY });
     
-    // Connexion à Browserless via WebSocket avec timeout 3 minutes
-    browser = await chromium.connect(BROWSER_WS_ENDPOINT, {
-      timeout: 180000
-    });
-    const page = await browser.newPage();
+    console.log(`[SCRAPER] Scraping de ${url}...`);
     
-    console.log('[SCRAPER] Navigateur connecte avec succes');
-    
-    console.log(`[SCRAPER] Navigation vers ${url}...`);
-    await page.goto(url, { 
-      waitUntil: 'domcontentloaded', 
-      timeout: 120000 
+    // Scraper le site avec Firecrawl
+    const result = await app.scrapeUrl(url, {
+      formats: ['html', 'markdown', 'screenshot'],
+      waitFor: 2000
     });
     
     console.log('[SCRAPER] Page chargee, extraction des donnees...');
-
-    // Extraire les couleurs
-    const colors = await page.evaluate(() => {
-      const colorSet = new Set();
-      document.querySelectorAll('*').forEach(el => {
-        const styles = window.getComputedStyle(el);
-        ['color', 'backgroundColor', 'borderColor'].forEach(prop => {
-          const color = styles[prop];
-          if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') {
-            colorSet.add(color);
-          }
-        });
-      });
-      return Array.from(colorSet).slice(0, 10);
-    });
-
-    // Extraire le logo
-    const logoUrl = await page.evaluate(() => {
-      const selectors = [
-        'img[alt*="logo" i]',
-        'img.logo',
-        '.logo img',
-        'header img:first-of-type'
-      ];
-      for (const sel of selectors) {
-        const img = document.querySelector(sel);
-        if (img && img.src) return img.src;
-      }
-      return null;
-    });
-
-    // Extraire les sections
-    const sections = await page.evaluate(() => {
-      const found = [];
-      ['header', 'section', 'main', 'article', 'footer'].forEach(tag => {
-        document.querySelectorAll(tag).forEach((el, i) => {
-          const heading = el.querySelector('h1, h2, h3');
-          const title = heading ? heading.textContent.trim() : `${tag.toUpperCase()} ${i + 1}`;
-          found.push({ tag, title });
-        });
-      });
-      return found.slice(0, 8);
-    });
-
+    
+    if (!result.success) {
+      throw new Error('Firecrawl scraping failed');
+    }
+    
+    const data = result.data;
+    const html = data.html || '';
+    const metadata = data.metadata || {};
+    
+    // Extraire les couleurs depuis le HTML
+    const colors = extractColorsFromHTML(html);
+    
+    // Extraire le logo depuis le HTML
+    const logoUrl = extractLogoFromHTML(html);
+    
+    // Extraire les sections depuis le HTML
+    const sections = extractSectionsFromHTML(html);
+    
     // Analyser les problèmes
-    const issues = await page.evaluate(() => {
-      const problems = [];
-      if (!document.querySelector('meta[name="viewport"]')) {
-        problems.push('Site non-responsive');
-      }
-      if (!document.querySelector('[class*="chat"]') && !document.querySelector('[id*="chat"]')) {
-        problems.push('Pas de chatbot IA');
-      }
-      if (document.querySelectorAll('a[href*="contact"], button[class*="cta"]').length < 2) {
-        problems.push('Manque de CTA');
-      }
-      return problems.length > 0 ? problems : ['Aucun problème majeur'];
-    });
-
-    const title = await page.title();
+    const issues = analyzeIssues(html, metadata);
+    
+    const title = metadata.title || data.title || 'Sans titre';
     const score = Math.max(100 - (issues.length * 10), 50);
     
     console.log('[SCRAPER] Donnees extraites:', {
@@ -111,15 +62,12 @@ async function scrapeWebsite(url) {
       issuesCount: issues.length
     });
 
-    await browser.close();
-    browser = null;
-
-    console.log('[SCRAPER] Scraping termine avec Browserless');
+    console.log('[SCRAPER] Scraping termine avec Firecrawl');
 
     return {
       url,
       title,
-      colors: colors.length > 0 ? colors : ['#0f204b', '#5bc236', '#ffffff'],
+      colors,
       logoUrl,
       sections,
       issues,
@@ -128,12 +76,97 @@ async function scrapeWebsite(url) {
     };
 
   } catch (error) {
-    if (browser) await browser.close();
     console.error('[SCRAPER] Erreur:', error.message);
     throw error;
   }
 }
 
+/**
+ * Extraire les couleurs depuis le HTML
+ */
+function extractColorsFromHTML(html) {
+  const colors = new Set();
+  const colorRegex = /#([0-9A-Fa-f]{3}){1,2}\b|rgb\([^)]+\)|rgba\([^)]+\)/g;
+  const matches = html.match(colorRegex);
+  
+  if (matches) {
+    matches.forEach(color => colors.add(color));
+  }
+  
+  const colorArray = Array.from(colors).slice(0, 10);
+  return colorArray.length > 0 ? colorArray : ['#0f204b', '#5bc236', '#ffffff'];
+}
+
+/**
+ * Extraire le logo depuis le HTML
+ */
+function extractLogoFromHTML(html) {
+  const logoPatterns = [
+    /src=["']([^"']*logo[^"']*)["']/i,
+    /src=["']([^"']*brand[^"']*)["']/i,
+    /<img[^>]*class=["'][^"']*logo[^"']*["'][^>]*src=["']([^"']*)["']/i
+  ];
+  
+  for (const pattern of logoPatterns) {
+    const match = html.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Extraire les sections depuis le HTML
+ */
+function extractSectionsFromHTML(html) {
+  const sections = [];
+  const sectionRegex = /<(header|section|main|article|footer)[^>]*>(.*?)<\/\1>/gis;
+  let match;
+  let count = 0;
+  
+  while ((match = sectionRegex.exec(html)) !== null && count < 8) {
+    const tag = match[1];
+    const content = match[2];
+    const headingMatch = content.match(/<h[1-3][^>]*>([^<]+)<\/h[1-3]>/i);
+    const title = headingMatch ? headingMatch[1].trim() : `${tag.toUpperCase()} ${count + 1}`;
+    
+    sections.push({ tag, title });
+    count++;
+  }
+  
+  return sections;
+}
+
+/**
+ * Analyser les problèmes du site
+ */
+function analyzeIssues(html, metadata) {
+  const problems = [];
+  
+  // Vérifier viewport
+  if (!html.includes('name="viewport"') && !html.includes("name='viewport'")) {
+    problems.push('Site non-responsive');
+  }
+  
+  // Vérifier chatbot
+  if (!html.includes('chat') && !html.includes('Chat')) {
+    problems.push('Pas de chatbot IA');
+  }
+  
+  // Vérifier CTA
+  const ctaCount = (html.match(/contact|Contact|cta|CTA|button|Button/g) || []).length;
+  if (ctaCount < 3) {
+    problems.push('Manque de CTA');
+  }
+  
+  return problems.length > 0 ? problems : ['Aucun probleme majeur'];
+}
+
+/**
+ * Détecter l'industrie
+ */
 function detectIndustry(title, url) {
   const text = (title + ' ' + url).toLowerCase();
   if (text.includes('clinic') || text.includes('health') || text.includes('medical')) return 'Santé';
