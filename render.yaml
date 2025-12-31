@@ -16,7 +16,7 @@ services:
         sync: false
       - key: SUPABASE_KEY
         sync: false
-      - key: BROWSERLESS_TOKEN
+      - key: FIRECRAWL_API_KEY
         sync: false
       - key: OPENAI_API_KEY
         sync: false
