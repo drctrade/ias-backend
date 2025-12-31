@@ -1,7 +1,7 @@
 {
   "name": "ias-backend",
   "version": "4.1.0",
-  "description": "IAS Backend API v4.1",
+  "description": "IAS Backend API v4.1 - Browserless",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -15,7 +15,7 @@
     "express": "^4.21.2",
     "openai": "^4.52.0",
     "pdfkit": "^0.15.0",
-    "puppeteer": "^23.11.1"
+    "playwright": "^1.40.0"
   },
   "engines": {
     "node": ">=18.0.0"
