@@ -1,12 +1,15 @@
+# ================================
+# RENDER.COM CONFIGURATION - IAS v4.1
+# Playwright + Browserless + Gemini
+# ================================
+
 services:
   - type: web
-    name: ias-upgrade-system
+    name: ias-backend
     runtime: node
     region: frankfurt
     plan: starter
-    buildCommand: |
-      npm ci
-      npx puppeteer browsers install chrome
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -18,9 +21,11 @@ services:
         sync: false
       - key: SUPABASE_KEY
         sync: false
+      - key: BROWSERLESS_TOKEN
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: PUPPETEER_EXECUTABLE_PATH
-        value: /opt/render/.cache/puppeteer/chrome/linux-131.0.6778.204/chrome-linux64/chrome
-      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
-        value: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: APIFY_API_KEY
+        sync: false
