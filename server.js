@@ -1,5 +1,5 @@
 // ================================
-// IAS BACKEND SERVER v4.1 PUPPETEER - FIXED FOR RENDER
+// IAS BACKEND SERVER v4.1 FINAL
 // Puppeteer + Gemini Imagen + Emails Client + HTML Amélioré
 // ================================
 
@@ -9,8 +9,6 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const puppeteer = require('puppeteer');
-const path = require('path');
-const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const PDFDocument = require('pdfkit');
@@ -22,7 +20,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
 
 // ================================
 // CONFIGURATION
@@ -32,17 +29,18 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-const supabase = SUPABASE_URL && SUPABASE_KEY ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+if (!SUPABASE_KEY) throw new Error("supabaseKey is required.");
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 console.log(`[Backend] Mode: ${process.env.NODE_ENV || 'development'}`);
-console.log(`[Backend] Supabase: ${SUPABASE_URL ? 'ENABLED' : 'DISABLED'}`);
+console.log(`[Backend] Supabase: ${SUPABASE_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`[Backend] Gemini: ${GEMINI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`[Backend] OpenAI: ${OPENAI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 
-// Configuration Puppeteer optimisée pour Render
 const PUPPETEER_CONFIG = {
-  headless: 'new',
+  headless: true,
   args: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -52,19 +50,9 @@ const PUPPETEER_CONFIG = {
     '--no-zygote',
     '--disable-gpu',
     '--disable-software-rasterizer',
-    '--disable-extensions',
-    '--disable-web-resources',
-    '--disable-component-extensions-with-background-pages'
-  ],
-  timeout: 30000
+    '--disable-extensions'
+  ]
 };
-
-// Déterminer le chemin de Chrome
-if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-  PUPPETEER_CONFIG.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-}
-
-let browser = null;
 
 // ================================
 // HELPER FUNCTIONS
@@ -96,397 +84,398 @@ async function extractColors(page) {
   }
 }
 
-async function extractMetadata(page, url) {
+async function extractLogo(page) {
   try {
-    const metadata = await page.evaluate(() => {
-      return {
-        title: document.title || '',
-        description: document.querySelector('meta[name="description"]')?.content || '',
-        keywords: document.querySelector('meta[name="keywords"]')?.content || '',
-        ogImage: document.querySelector('meta[property="og:image"]')?.content || '',
-        ogTitle: document.querySelector('meta[property="og:title"]')?.content || '',
-        ogDescription: document.querySelector('meta[property="og:description"]')?.content || ''
-      };
+    const logoUrl = await page.evaluate(() => {
+      const selectors = [
+        'img[alt*="logo" i]',
+        'img.logo',
+        '.logo img',
+        'header img:first-of-type',
+        '.header img:first-of-type',
+        'nav img:first-of-type'
+      ];
+      
+      for (const selector of selectors) {
+        const img = document.querySelector(selector);
+        if (img && img.src) return img.src;
+      }
+      return null;
     });
     
-    return metadata;
+    return logoUrl;
   } catch (error) {
-    console.error('[METADATA] Erreur:', error.message);
-    return {};
+    console.error('[LOGO] Erreur:', error.message);
+    return null;
   }
 }
 
-async function generateAuditScore(metadata, colors) {
-  let score = 50;
-  
-  if (metadata.title && metadata.title.length > 10) score += 10;
-  if (metadata.description && metadata.description.length > 20) score += 10;
-  if (metadata.ogImage) score += 10;
-  if (colors && colors.length > 3) score += 10;
-  if (metadata.keywords) score += 10;
-  
-  return Math.min(score, 95);
-}
-
-async function generateContentWithGemini(prompt) {
-  if (!genAI) {
-    console.warn('[GEMINI] API non configurée');
-    return generateFallbackContent(prompt);
-  }
-
+async function extractSections(page) {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
-  } catch (error) {
-    console.error('[GEMINI] Erreur:', error.message);
-    return generateFallbackContent(prompt);
-  }
-}
-
-function generateFallbackContent(prompt) {
-  // Contenu par défaut si les APIs ne sont pas disponibles
-  if (prompt.includes('System Prompt')) {
-    return `Vous êtes un agent IA professionnel. Vous aidez les clients à résoudre leurs problèmes de manière courtoise et efficace.`;
-  }
-  if (prompt.includes('Brand Kit')) {
-    return `Guide de marque: Utilisez les couleurs principales pour créer une identité cohérente. Maintenez la typographie professionnelle.`;
-  }
-  if (prompt.includes('Loom')) {
-    return `Script Vidéo Loom:\n1. Introduction (10s)\n2. Problèmes identifiés (30s)\n3. Solutions proposées (30s)\n4. Call-to-action (10s)`;
-  }
-  return 'Contenu généré par défaut';
-}
-
-async function generatePDF(companyName, metadata, score) {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument();
-      const chunks = [];
-
-      doc.on('data', chunk => chunks.push(chunk));
-      doc.on('end', () => {
-        const pdfBuffer = Buffer.concat(chunks);
-        resolve(pdfBuffer.toString('base64'));
+    const sections = await page.evaluate(() => {
+      const foundSections = [];
+      const sectionTags = ['header', 'section', 'main', 'article', 'footer'];
+      
+      sectionTags.forEach(tag => {
+        const elements = document.querySelectorAll(tag);
+        elements.forEach((el, idx) => {
+          const heading = el.querySelector('h1, h2, h3');
+          const title = heading ? heading.textContent.trim() : `${tag.toUpperCase()} ${idx + 1}`;
+          foundSections.push({ tag, title });
+        });
       });
-      doc.on('error', reject);
-
-      // Couverture
-      doc.rect(0, 0, doc.page.width, doc.page.height).fill('#0f204b');
-      doc.fillColor('#ffffff')
-         .fontSize(42)
-         .font('Helvetica-Bold')
-         .text('RAPPORT D\'AUDIT', 50, 200, { align: 'center' });
       
-      doc.fontSize(24)
-         .font('Helvetica')
-         .text(companyName, 50, 300, { align: 'center' });
-      
-      doc.fontSize(14)
-         .text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 50, 400, { align: 'center' });
-
-      // Page 2
-      doc.addPage();
-      doc.fillColor('#0f204b')
-         .fontSize(24)
-         .font('Helvetica-Bold')
-         .text('RÉSUMÉ EXÉCUTIF', 50, 50);
-      
-      doc.fillColor('#000000')
-         .fontSize(12)
-         .font('Helvetica')
-         .text(`Score du site: ${score}/100`, 50, 100);
-      
-      doc.text(`Titre: ${metadata.title || 'Non détecté'}`, 50, 130);
-      doc.text(`Description: ${(metadata.description || 'Non disponible').substring(0, 100)}...`, 50, 160);
-
-      doc.end();
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
-
-async function scrapeSite(url) {
-  console.log(`[SCRAPER] Démarrage du scraping: ${url}`);
-  
-  let page = null;
-  try {
-    // Initialiser le navigateur si nécessaire
-    if (!browser) {
-      console.log('[BROWSER] Lancement du navigateur...');
-      browser = await puppeteer.launch(PUPPETEER_CONFIG);
-      console.log('[BROWSER] Navigateur lancé avec succès');
-    }
-
-    page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 720 });
+      return foundSections.slice(0, 8);
+    });
     
-    console.log('[PAGE] Navigation vers:', url);
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-
-    // Extraire les données
-    const colors = await extractColors(page);
-    const metadata = await extractMetadata(page, url);
-    const score = await generateAuditScore(metadata, colors);
-
-    console.log('[SCRAPER] Scraping terminé avec succès');
-
-    return {
-      success: true,
-      metadata,
-      colors,
-      score,
-      url
-    };
-
+    return sections;
   } catch (error) {
-    console.error('[SCRAPER] Erreur:', error.message);
-    return {
-      success: false,
-      error: error.message,
-      score: 30,
-      colors: ['#0f204b', '#5bc236'],
-      metadata: {}
-    };
-  } finally {
-    if (page) {
-      try {
-        await page.close();
-      } catch (e) {
-        console.warn('[PAGE] Erreur fermeture page:', e.message);
+    console.error('[SECTIONS] Erreur:', error.message);
+    return [];
+  }
+}
+
+async function analyzeIssues(page) {
+  try {
+    const issues = await page.evaluate(() => {
+      const problems = [];
+      
+      if (!document.querySelector('meta[name="viewport"]')) {
+        problems.push('Site non-responsive');
       }
-    }
+      
+      const hasChatbot = document.querySelector('[class*="chat"]') || 
+                        document.querySelector('[id*="chat"]');
+      if (!hasChatbot) {
+        problems.push('Pas de chatbot IA');
+      }
+      
+      const ctaButtons = document.querySelectorAll('a[href*="contact"], button[class*="cta"]');
+      if (ctaButtons.length < 2) {
+        problems.push('Manque de CTA');
+      }
+      
+      return problems.length > 0 ? problems : ['Aucun problème majeur'];
+    });
+    
+    return issues;
+  } catch (error) {
+    console.error('[ISSUES] Erreur:', error.message);
+    return ['Erreur analyse'];
   }
 }
 
 // ================================
-// ROUTES
+// GENERATION FUNCTIONS
 // ================================
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-app.post('/api/generate/package', async (req, res) => {
-  const { url, companyName } = req.body;
-
-  if (!url) {
-    return res.status(400).json({ error: 'URL requise' });
-  }
-
-  console.log(`[PACKAGE] 🚀 Génération pour ${url}...`);
-
-  try {
-    // Étape 1: Scraper le site
-    console.log('[PACKAGE] 📊 Étape 1/7: Connexion navigateur...');
-    const scrapedData = await scrapeSite(url);
-
-    if (!scrapedData.success) {
-      throw new Error(`Erreur scraping: ${scrapedData.error}`);
-    }
-
-    // Étape 2: Générer le contenu AI
-    console.log('[PACKAGE] 🤖 Étape 2/7: Génération du contenu AI...');
-    const systemPrompt = await generateContentWithGemini(
-      `Créez un system prompt pour un agent IA qui aide les clients de ${companyName || 'cette entreprise'}.`
-    );
-
-    const brandKit = await generateContentWithGemini(
-      `Créez un Brand Kit Prompt pour ${companyName || 'cette entreprise'} avec les couleurs: ${scrapedData.colors.join(', ')}`
-    );
-
-    const loomScript = await generateContentWithGemini(
-      `Créez un script Loom de 2 minutes pour prospecter ${companyName || 'cette entreprise'}.`
-    );
-
-    // Étape 3: Générer le PDF
-    console.log('[PACKAGE] 📄 Étape 3/7: Génération du rapport PDF...');
-    const auditPDF = await generatePDF(companyName || 'Entreprise', scrapedData.metadata, scrapedData.score);
-
-    // Étape 4: Générer le HTML
-    console.log('[PACKAGE] 💻 Étape 4/7: Génération du code HTML...');
-    const htmlCode = `<!DOCTYPE html>
+function generateHTMLCode(companyName, colors, logoUrl, sections, siteUrl) {
+  const primaryColor = colors[0] || '#5bc236';
+  const secondaryColor = colors[1] || '#0f204b';
+  
+  const sectionsHTML = sections.slice(0, 3).map((sec, i) => `
+    <section class="py-16 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+        <div class="container mx-auto px-4">
+            <h2 class="text-4xl font-bold text-center mb-12">${sec.title}</h2>
+            <p class="text-center text-gray-600 max-w-2xl mx-auto">
+                Contenu de la section ${sec.title} à personnaliser selon vos besoins.
+            </p>
+        </div>
+    </section>
+  `).join('\n');
+  
+  const logoHTML = logoUrl ? `<img src="${logoUrl}" alt="${companyName} Logo" class="h-12">` : `<h1 class="text-3xl font-bold">${companyName}</h1>`;
+  
+  return `<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${companyName || 'Site Web'}</title>
+    <title>${companyName} - Site Modernisé</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; }
-        header { background: linear-gradient(135deg, ${scrapedData.colors[0]} 0%, ${scrapedData.colors[1]} 100%); color: white; padding: 60px 20px; text-align: center; }
-        h1 { font-size: 3em; margin-bottom: 10px; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
-        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 30px; margin: 40px 0; }
-        .feature { padding: 20px; border-radius: 8px; background: #f5f5f5; }
-        .cta { background: ${scrapedData.colors[0]}; color: white; padding: 20px 40px; border: none; border-radius: 8px; cursor: pointer; font-size: 1.1em; }
-        footer { background: #333; color: white; text-align: center; padding: 20px; margin-top: 40px; }
+        :root {
+            --primary: ${primaryColor};
+            --secondary: ${secondaryColor};
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+        }
     </style>
 </head>
 <body>
-    <header>
-        <h1>${companyName || 'Bienvenue'}</h1>
-        <p>Transformez votre présence digitale</p>
+    <header class="gradient-bg text-white py-4">
+        <div class="container mx-auto px-4 flex justify-between items-center">
+            ${logoHTML}
+            <nav>
+                <button class="bg-white text-gray-900 px-6 py-2 rounded-full font-bold">Contact</button>
+            </nav>
+        </div>
     </header>
-    
-    <div class="container">
-        <h2>Nos Services</h2>
-        <div class="features">
-            <div class="feature">
-                <h3>Service 1</h3>
-                <p>Description du service</p>
-            </div>
-            <div class="feature">
-                <h3>Service 2</h3>
-                <p>Description du service</p>
-            </div>
-            <div class="feature">
-                <h3>Service 3</h3>
-                <p>Description du service</p>
-            </div>
-        </div>
-        
-        <div style="text-align: center; margin: 40px 0;">
-            <button class="cta">Contactez-nous</button>
-        </div>
-    </div>
-    
-    <footer>
-        <p>&copy; 2025 ${companyName || 'Entreprise'}. Tous droits réservés.</p>
+
+    ${sectionsHTML}
+
+    <footer class="bg-gray-900 text-white py-8 text-center">
+        <p>&copy; 2025 ${companyName}. Site original: <a href="${siteUrl}" class="underline">${siteUrl}</a></p>
     </footer>
 </body>
 </html>`;
+}
 
-    // Étape 5: Générer les emails
-    console.log('[PACKAGE] ✉️ Étape 5/7: Génération des templates emails...');
-    const emailTemplates = [
-      {
-        name: 'Email 1 - Découverte',
-        timing: 'Jour 1',
-        subject: `Audit gratuit pour ${companyName || 'votre entreprise'}`,
-        body: `Bonjour,\n\nJ'ai analysé votre site web et j'ai identifié 3 opportunités d'amélioration.\n\nSouhaitez-vous en discuter?\n\nCordialement`
-      },
-      {
-        name: 'Email 2 - Relance',
-        timing: 'Jour 3',
-        subject: `Votre audit de site web - Résultats`,
-        body: `Bonjour,\n\nVoici les résultats de votre audit...\n\nCordialement`
-      },
-      {
-        name: 'Email 3 - Proposition',
-        timing: 'Jour 7',
-        subject: `Proposition personnalisée pour ${companyName || 'votre entreprise'}`,
-        body: `Bonjour,\n\nJe vous propose une solution adaptée à vos besoins...\n\nCordialement`
-      }
-    ];
+function generateAISystemPrompt(companyName, siteUrl, colors) {
+  return `Tu es l'assistant virtuel de ${companyName} (${siteUrl}).
 
-    // Étape 6: Générer les prospects
-    console.log('[PACKAGE] 🎯 Étape 6/7: Identification des prospects...');
-    const prospects = {
-      industry: 'Services',
-      prospects: [
-        { id: 1, name: 'Prospect 1', reason: 'Site web obsolète' },
-        { id: 2, name: 'Prospect 2', reason: 'Pas de chatbot' },
-        { id: 3, name: 'Prospect 3', reason: 'Avis Google faibles' }
-      ]
-    };
+Ton rôle:
+- Répondre aux questions sur les services
+- Qualifier les prospects
+- Proposer des rendez-vous
 
-    // Étape 7: Finaliser le package
-    console.log('[PACKAGE] ✅ Étape 7/7: Finalisation du package...');
+Ton de communication:
+- Professionnel et chaleureux
+- Français impeccable
+- Orienté solution`;
+}
 
-    const packageData = {
-      id: `pkg_${Date.now()}`,
-      company_name: companyName || 'Entreprise',
-      website_url: url,
-      audit_score: scrapedData.score,
-      audit_metadata: scrapedData.metadata,
-      colors: scrapedData.colors,
-      deliverables: {
-        audit_report_pdf: auditPDF,
-        html_code: htmlCode,
-        ai_system_prompt: systemPrompt,
-        brand_kit_prompt: brandKit,
-        loom_script: loomScript,
-        email_templates: emailTemplates,
-        qualified_prospects: prospects,
-        social_visuals: []
-      }
-    };
+function generateLoomScript(companyName, siteUrl, issues) {
+  return `🎥 SCRIPT LOOM - ${companyName.toUpperCase()}
 
-    // Sauvegarder dans Supabase si configuré
-    if (supabase) {
+INTRO (0:00-0:15):
+"Bonjour ! J'ai analysé ${siteUrl} et identifié ${issues.length} opportunités d'amélioration."
+
+PROBLÈMES (0:15-1:00):
+${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
+
+SOLUTION (1:00-1:45):
+✅ Site moderne et responsive
+✅ Chatbot IA 24/7
+✅ Design optimisé conversion
+
+CLOSING (1:45-2:00):
+"Package complet prêt. On en discute cette semaine ?"`;
+}
+
+function generateEmailTemplates(companyName, siteUrl) {
+  return [
+    {
+      subject: `IntelliAIScale - Opportunité pour ${companyName}`,
+      from: "Darly <darly@intelliaiscale.com>",
+      body: `Bonjour,
+
+Je suis Darly d'IntelliAIScale. J'ai analysé ${siteUrl} et identifié des opportunités d'amélioration.
+
+J'ai préparé pour vous :
+✅ Audit complet
+✅ Prototype HTML modernisé
+✅ Chatbot IA clé-en-main
+
+Disponible pour un appel de 15 min cette semaine ?
+
+Cordialement,
+Darly
+IntelliAIScale`
+    },
+    {
+      subject: `[Rappel] Package pour ${companyName}`,
+      from: "Darly <darly@intelliaiscale.com>",
+      body: `Bonjour,
+
+Je voulais m'assurer que vous aviez reçu mon email concernant ${siteUrl}.
+
+Le package inclut un design moderne, chatbot IA et prospection automatisée.
+
+Meilleur moment pour échanger ?
+
+Cordialement,
+Darly`
+    },
+    {
+      subject: `Dernier rappel - ${companyName}`,
+      from: "Darly <darly@intelliaiscale.com>",
+      body: `Bonjour,
+
+Dernier message concernant le package pour ${siteUrl}.
+
+Si le timing n'est pas bon, pas de souci !
+
+Excellente journée,
+Darly`
+    }
+  ];
+}
+
+async function generateGeminiImages(companyName, colors, count = 6) {
+  if (!genAI) {
+    console.log('[GEMINI] ⚠️  Pas de clé API, images désactivées');
+    return [];
+  }
+
+  const images = [];
+  const primaryColor = colors[0] || '#5bc236';
+  
+  const prompts = [
+    `Professional business Instagram post for ${companyName}, modern design, color ${primaryColor}, high quality`,
+    `Facebook cover image for ${companyName}, professional branding, color scheme ${primaryColor}`,
+    `LinkedIn post graphic for ${companyName}, corporate style, ${primaryColor} accent`,
+    `Social media story for ${companyName}, vertical format, trendy design`,
+    `Professional service announcement for ${companyName}, clean and modern`,
+    `Brand promotion visual for ${companyName}, eye-catching, ${primaryColor} theme`
+  ];
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "imagen-3.0-generate-001" });
+    
+    for (let i = 0; i < Math.min(count, prompts.length); i++) {
       try {
-        await supabase.from('packages').insert([{
-          id: packageData.id,
-          company_name: packageData.company_name,
-          website_url: packageData.website_url,
-          audit_score: packageData.audit_score,
-          deliverables: packageData.deliverables,
-          created_at: new Date().toISOString()
-        }]);
-        console.log('[SUPABASE] Package sauvegardé');
-      } catch (error) {
-        console.warn('[SUPABASE] Erreur sauvegarde:', error.message);
+        const result = await model.generateContent(prompts[i]);
+        const imageUrl = result.response?.candidates?.[0]?.content;
+        if (imageUrl) {
+          images.push({ prompt: prompts[i], url: imageUrl });
+        }
+      } catch (err) {
+        console.error(`[GEMINI] Erreur image ${i + 1}:`, err.message);
       }
     }
-
-    console.log('[PACKAGE] ✅ Génération terminée avec succès');
-
-    res.json({
-      success: true,
-      package: packageData
-    });
-
   } catch (error) {
-    console.error('[PACKAGE] ❌ Erreur:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    console.error('[GEMINI] Erreur génération:', error.message);
   }
+
+  return images;
+}
+
+// ================================
+// API ENDPOINTS
+// ================================
+
+app.get('/', (req, res) => {
+  res.json({
+    status: 'OK',
+    version: '4.1',
+    features: ['Scraping', 'Gemini Imagen', 'PDF', 'Puppeteer', 'Prospects']
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
 app.get('/api/packages', async (req, res) => {
   try {
-    if (!supabase) {
-      return res.json({ packages: [] });
-    }
-
     const { data, error } = await supabase
       .from('packages')
-      .select('id, company_name, website_url, audit_score, created_at')
+      .select('*')
       .order('created_at', { ascending: false })
       .limit(10);
 
     if (error) throw error;
 
-    res.json({ packages: data || [] });
+    res.json({ success: true, packages: data });
   } catch (error) {
-    console.error('[API] Erreur:', error.message);
-    res.status(500).json({ error: error.message });
+    console.error('[API] Erreur packages:', error.message);
+    res.json({ success: true, packages: [] });
+  }
+});
+
+app.get('/api/prospects', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('prospects')
+      .select('*')
+      .order('score', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({ success: true, prospects: data });
+  } catch (error) {
+    console.error('[API] Erreur prospects:', error.message);
+    res.json({ success: true, prospects: [] });
+  }
+});
+
+app.post('/api/generate/package', async (req, res) => {
+  const { url, companyName } = req.body;
+
+  if (!url || !companyName) {
+    return res.status(400).json({ error: 'URL et nom entreprise requis' });
+  }
+
+  console.log(`[PACKAGE] 🚀 Génération pour ${url}...`);
+
+  let browser;
+  try {
+    console.log(`[PACKAGE] 📊 Étape 1/7: Connexion navigateur...`);
+    browser = await puppeteer.launch(PUPPETEER_CONFIG);
+    const page = await browser.newPage();
+    
+    console.log(`[PACKAGE] 📊 Étape 2/7: Scraping du site...`);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    const colors = await extractColors(page);
+    const logoUrl = await extractLogo(page);
+    const sections = await extractSections(page);
+    const issues = await analyzeIssues(page);
+    const score = Math.max(100 - (issues.length * 10), 50);
+
+    await browser.close();
+    browser = null;
+
+    console.log(`[PACKAGE] 📊 Étape 3/7: Génération HTML GHL...`);
+    const htmlCode = generateHTMLCode(companyName, colors, logoUrl, sections, url);
+    
+    console.log(`[PACKAGE] 📊 Étape 4/7: Génération contenus IA...`);
+    const aiPrompt = generateAISystemPrompt(companyName, url, colors);
+    const loomScript = generateLoomScript(companyName, url, issues);
+    const emailTemplates = generateEmailTemplates(companyName, url);
+
+    console.log(`[PACKAGE] 📊 Étape 5/7: Génération visuels Gemini...`);
+    const socialVisuals = await generateGeminiImages(companyName, colors, 6);
+
+    console.log(`[PACKAGE] 📊 Étape 6/7: Sauvegarde Supabase...`);
+    const packageData = {
+      company_name: companyName,
+      website_url: url,
+      status: 'completed',
+      audit_score: score,
+      audit_issues: issues,
+      color_palette: { colors },
+      detected_industry: 'General',
+      html_code: htmlCode,
+      ai_system_prompt: aiPrompt,
+      loom_script: loomScript,
+      email_templates: emailTemplates,
+      social_visuals: socialVisuals,
+      created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('packages')
+      .insert([packageData])
+      .select();
+
+    if (error) throw error;
+
+    console.log(`[PACKAGE] ✅ Package sauvegardé !`);
+
+    res.json({
+      success: true,
+      message: 'Package généré avec succès',
+      package: data[0]
+    });
+
+  } catch (error) {
+    if (browser) await browser.close();
+    console.error('[PACKAGE] ❌ Erreur:', error.message);
+    res.status(500).json({ 
+      error: 'Erreur génération package', 
+      details: error.message 
+    });
   }
 });
 
 // ================================
-// DÉMARRAGE DU SERVEUR
+// START SERVER
 // ================================
 
 app.listen(PORT, () => {
   console.log(`[Server] 🚀 Démarré sur le port ${PORT}`);
   console.log(`[Server] 📍 http://localhost:${PORT}`);
-});
-
-// Gestion de l'arrêt gracieux
-process.on('SIGINT', async () => {
-  console.log('[Server] Arrêt du serveur...');
-  if (browser) {
-    await browser.close();
-  }
-  process.exit(0);
 });
