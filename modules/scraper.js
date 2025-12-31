@@ -8,7 +8,7 @@ const { chromium } = require('playwright');
 // Configuration Browserless
 const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '';
 const BROWSER_WS_ENDPOINT = BROWSERLESS_TOKEN 
-  ? `wss://production-sfo.browserless.io/playwright?token=${BROWSERLESS_TOKEN}`
+  ? `wss://production-sfo.browserless.io?token=${BROWSERLESS_TOKEN}`
   : null;
 
 /**
