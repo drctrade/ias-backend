@@ -47,7 +47,7 @@ async function generateAuditPDF(companyName, url, scrapedData, aiContent) {
       doc.text('• Optimiser pour mobile', 50, 160);
 
       doc.end();
-      console.log('[PDF] ✅ Rapport d'audit généré');
+      console.log('[PDF] Rapport d audit genere');
 
     } catch (error) {
       console.error('[PDF] Erreur:', error.message);
@@ -84,7 +84,7 @@ async function generateProposalPDF(companyName, url, scrapedData) {
       doc.text('• Formation complète', 50, 160);
 
       doc.end();
-      console.log('[PDF] ✅ Proposition commerciale générée');
+      console.log('[PDF] Proposition commerciale generee');
 
     } catch (error) {
       console.error('[PDF] Erreur:', error.message);
