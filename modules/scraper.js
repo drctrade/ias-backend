@@ -1,23 +1,15 @@
 // ================================
 // MODULE SCRAPER - Analyse de sites web
+// Utilise Browserless pour le scraping
 // ================================
 
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');
 
-// Configuration Puppeteer pour Render.com
-const BROWSER_CONFIG = {
-  headless: 'new',
-  args: [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-accelerated-2d-canvas',
-    '--no-first-run',
-    '--no-zygote',
-    '--single-process',
-    '--disable-gpu'
-  ]
-};
+// Configuration Browserless
+const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '';
+const BROWSER_WS_ENDPOINT = BROWSERLESS_TOKEN 
+  ? `wss://production-sfo.browserless.io?token=${BROWSERLESS_TOKEN}`
+  : null;
 
 /**
  * Scrape un site web et extrait les données pertinentes
@@ -26,13 +18,19 @@ async function scrapeWebsite(url) {
   let browser = null;
   
   try {
-    console.log('[SCRAPER] Lancement du navigateur...');
-    browser = await puppeteer.launch(BROWSER_CONFIG);
+    console.log('[SCRAPER] Connexion à Browserless...');
+    
+    if (!BROWSER_WS_ENDPOINT) {
+      throw new Error('BROWSERLESS_TOKEN manquant');
+    }
+    
+    // Connexion à Browserless via WebSocket
+    browser = await chromium.connect(BROWSER_WS_ENDPOINT);
     const page = await browser.newPage();
     
     console.log(`[SCRAPER] Visite de ${url}...`);
     await page.goto(url, { 
-      waitUntil: 'networkidle2', 
+      waitUntil: 'networkidle', 
       timeout: 60000 
     });
 
@@ -100,7 +98,7 @@ async function scrapeWebsite(url) {
     await browser.close();
     browser = null;
 
-    console.log('[SCRAPER] ✅ Scraping terminé');
+    console.log('[SCRAPER] Scraping termine avec Browserless');
 
     return {
       url,
@@ -115,7 +113,7 @@ async function scrapeWebsite(url) {
 
   } catch (error) {
     if (browser) await browser.close();
-    console.error('[SCRAPER] ❌ Erreur:', error.message);
+    console.error('[SCRAPER] Erreur:', error.message);
     throw error;
   }
 }
