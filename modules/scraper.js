@@ -26,9 +26,9 @@ async function scrapeWebsite(url) {
     
     console.log('[SCRAPER] WebSocket endpoint:', BROWSER_WS_ENDPOINT);
     
-    // Connexion à Browserless via WebSocket avec timeout
+    // Connexion à Browserless via WebSocket avec timeout 3 minutes
     browser = await chromium.connect(BROWSER_WS_ENDPOINT, {
-      timeout: 60000
+      timeout: 180000
     });
     const page = await browser.newPage();
     
@@ -37,7 +37,7 @@ async function scrapeWebsite(url) {
     console.log(`[SCRAPER] Navigation vers ${url}...`);
     await page.goto(url, { 
       waitUntil: 'domcontentloaded', 
-      timeout: 60000 
+      timeout: 120000 
     });
     
     console.log('[SCRAPER] Page chargee, extraction des donnees...');
