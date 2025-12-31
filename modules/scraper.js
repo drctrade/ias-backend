@@ -8,7 +8,7 @@ const { chromium } = require('playwright');
 // Configuration Browserless
 const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '';
 const BROWSER_WS_ENDPOINT = BROWSERLESS_TOKEN 
-  ? `wss://production-sfo.browserless.io?token=${BROWSERLESS_TOKEN}`
+  ? `wss://production-sfo.browserless.io/playwright?token=${BROWSERLESS_TOKEN}`
   : null;
 
 /**
@@ -18,21 +18,29 @@ async function scrapeWebsite(url) {
   let browser = null;
   
   try {
-    console.log('[SCRAPER] Connexion à Browserless...');
+    console.log('[SCRAPER] Connexion a Browserless...');
     
     if (!BROWSER_WS_ENDPOINT) {
       throw new Error('BROWSERLESS_TOKEN manquant');
     }
     
-    // Connexion à Browserless via WebSocket
-    browser = await chromium.connect(BROWSER_WS_ENDPOINT);
+    console.log('[SCRAPER] WebSocket endpoint:', BROWSER_WS_ENDPOINT);
+    
+    // Connexion à Browserless via WebSocket avec timeout
+    browser = await chromium.connect(BROWSER_WS_ENDPOINT, {
+      timeout: 60000
+    });
     const page = await browser.newPage();
     
-    console.log(`[SCRAPER] Visite de ${url}...`);
+    console.log('[SCRAPER] Navigateur connecte avec succes');
+    
+    console.log(`[SCRAPER] Navigation vers ${url}...`);
     await page.goto(url, { 
-      waitUntil: 'networkidle', 
+      waitUntil: 'domcontentloaded', 
       timeout: 60000 
     });
+    
+    console.log('[SCRAPER] Page chargee, extraction des donnees...');
 
     // Extraire les couleurs
     const colors = await page.evaluate(() => {
@@ -94,6 +102,14 @@ async function scrapeWebsite(url) {
 
     const title = await page.title();
     const score = Math.max(100 - (issues.length * 10), 50);
+    
+    console.log('[SCRAPER] Donnees extraites:', {
+      title,
+      score,
+      colorsCount: colors.length,
+      sectionsCount: sections.length,
+      issuesCount: issues.length
+    });
 
     await browser.close();
     browser = null;
