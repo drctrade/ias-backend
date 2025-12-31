@@ -9,9 +9,7 @@ services:
     runtime: node
     region: frankfurt
     plan: starter
-    buildCommand: |
-      npm ci
-      npx puppeteer browsers install chrome
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -29,7 +27,3 @@ services:
         sync: false
       - key: APIFY_API_KEY
         sync: false
-      - key: PUPPETEER_EXECUTABLE_PATH
-        value: /opt/render/.cache/puppeteer/chrome/linux-131.0.6778.204/chrome-linux64/chrome
-      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
-        value: false

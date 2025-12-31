@@ -49,10 +49,7 @@ const PUPPETEER_CONFIG = {
     '--disable-gpu',
     '--disable-software-rasterizer',
     '--disable-extensions'
-  ],
-  ...(process.env.PUPPETEER_EXECUTABLE_PATH && {
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
-  })
+  ]
 };
 
 // ================================
