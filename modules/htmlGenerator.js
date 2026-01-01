@@ -52,7 +52,20 @@ function generateModernHTML(companyName, siteUrl, colors = [], sections = [], lo
     : `<span class="text-xl md:text-2xl font-bold">${esc(companyName)}</span>`;
 
   // Services fallback from scraped sections if AI didn't provide
-  const sectionTitles = (sections || []).map(s => s.title).filter(Boolean).slice(0, 6);
+  // Normalize sections safely (can be array or object)
+let safeSections = [];
+
+if (Array.isArray(sections)) {
+  safeSections = sections;
+} else if (sections && typeof sections === 'object') {
+  safeSections = Object.values(sections);
+}
+
+const sectionTitles = safeSections
+  .map(s => (typeof s === 'string' ? s : s?.title))
+  .filter(Boolean)
+  .slice(0, 6);
+
   const buildServiceCards = (svcs, fallbackTitles) => {
     const list = (svcs && svcs.length) ? svcs : fallbackTitles.map(t => ({ title: t, desc: '' }));
     return list.slice(0, 6).map((sec, i) => `
