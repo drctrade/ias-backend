@@ -1,221 +1,278 @@
 // ================================
-// MODULE CONTENT GENERATOR - Génération de contenu AI
+// MODULE CONTENT GENERATOR - Génération de contenu AI (v5.0)
+// Améliorations clés:
+// - Multilingue: tous les livrables textuels sortent dans la langue détectée du site (EN/FR/ES)
+// - Copie site amélioré: génération bilingue (CA: EN/FR, US/INTL hispano: EN/ES), avec langue par défaut = langue du site
+// - Brand kit plus fidèle: s'appuie sur headings/meta/rawText/couleurs/logo + règles strictes "ne pas inventer"
+// - Toujours backward compatible: retourne systemPrompt, brandKitPrompt, loomScript, emailTemplates + ajoute websiteCopy
 // ================================
 
 const OpenAI = require('openai');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+function langPack(lang) {
+  const map = {
+    fr: { name: 'French', locale: 'fr-FR', label: 'Français' },
+    en: { name: 'English', locale: 'en-US', label: 'English' },
+    es: { name: 'Spanish', locale: 'es-ES', label: 'Español' }
+  };
+  return map[lang] || map.en;
+}
+
+function getBilingualPair(region) {
+  if (region === 'CA') return { primary: 'en', secondary: 'fr', toggle: 'EN-FR' };
+  // US + pays hispanophones (ou défaut) -> EN/ES
+  return { primary: 'en', secondary: 'es', toggle: 'EN-ES' };
+}
 
 async function generateAllContent(companyName, url, scrapedData) {
-  console.log('[CONTENT] Génération du contenu AI avec GPT-4...');
+  const lang = scrapedData.language || 'en';
+  const region = scrapedData.region || 'INTL';
+
+  console.log(`[CONTENT] Génération multilingue (lang=${lang}, region=${region})...`);
 
   try {
-    const [systemPrompt, brandKitPrompt, loomScript, emailTemplates] = await Promise.all([
-      generateSystemPrompt(companyName, url, scrapedData),
-      generateBrandKitPrompt(companyName, scrapedData),
-      generateLoomScript(companyName, url, scrapedData),
-      generateEmailTemplates(companyName, url, scrapedData)
+    const [systemPrompt, brandKitPrompt, loomScript, emailTemplates, websiteCopy] = await Promise.all([
+      generateSystemPrompt(companyName, url, scrapedData, lang),
+      generateBrandKitPrompt(companyName, url, scrapedData, lang),
+      generateLoomScript(companyName, url, scrapedData, lang),
+      generateEmailTemplates(companyName, url, scrapedData, lang),
+      generateWebsiteCopyBilingual(companyName, url, scrapedData, lang, region)
     ]);
 
-    return {
-      systemPrompt,
-      brandKitPrompt,
-      loomScript,
-      emailTemplates
-    };
+    return { systemPrompt, brandKitPrompt, loomScript, emailTemplates, websiteCopy };
   } catch (error) {
     console.error('[CONTENT] Erreur AI:', error.message);
     throw error;
   }
 }
 
-async function generateSystemPrompt(companyName, url, scrapedData) {
-  const prompt = `Tu es un expert en création de system prompts pour agents vocaux IA de niveau mondial. Crée un system prompt COMPLET et ULTRA-PERFORMANT pour un agent vocal IA représentant ${companyName} (${url}).
+async function generateSystemPrompt(companyName, url, scrapedData, lang) {
+  const lp = langPack(lang);
+  const issues = (scrapedData.issues || []).slice(0, 8);
 
-CONTEXTE BUSINESS:
-- Industrie: ${scrapedData.industry || 'Non détecté'}
-- Score site actuel: ${scrapedData.score}/100
-- Problèmes détectés: ${scrapedData.issues.join(', ') || 'Aucun'}
-- URL: ${url}
+  const prompt = `
+You are an expert prompt engineer.
+Write the full system prompt for a WORLD-CLASS AI voice agent representing "${companyName}" (${url}).
 
-OBJECTIFS DE L'AGENT VOCAL:
-1. **Qualification de prospects**: Identifier les leads qualifiés avec questions stratégiques
-2. **Prise de rendez-vous**: Convertir naturellement vers un appel de consultation
-3. **Représentation d'expertise**: Refléter le professionnalisme et l'expertise de ${companyName}
-4. **Expérience naturelle**: Sonner comme un humain parfait (pas robotique)
-5. **Gestion d'objections**: Répondre aux objections courantes avec confiance et empathie
+Hard rules:
+- Write in ${lp.name}.
+- Be practical and production-ready (call handling, booking, qualification, handoff).
+- Use Markdown headings.
+- Include guardrails, escalation rules, and privacy disclaimers.
+- If you don't know a detail, don't invent it.
 
-FRAMEWORK DE PROMPT À SUIVRE (structure experte):
+Context:
+- Industry: ${scrapedData.industry || 'Unknown'}
+- Website score: ${scrapedData.score || 0}/100
+- Issues detected: ${issues.join(' | ') || 'None'}
+- Key headings: ${(scrapedData.headings?.h1 || []).slice(0, 2).join(' | ')} / ${(scrapedData.headings?.h2 || []).slice(0, 5).join(' | ')}
 
-## Identité & Rôle
-- Définir clairement qui est l'agent, son rôle, sa mission
-- Ton de voix (professionnel mais chaleureux, consultatif)
-- Valeurs et personnalité
-
-## Contexte Business
-- Expertise de ${companyName}
-- Services offerts
-- Proposition de valeur unique
-- Différenciateurs clés
-
-## Directives Conversationnelles
-- Comment démarrer la conversation (salutation personnalisée)
-- Questions de qualification (ouvertes, SPIN selling)
-- Gestion des différents types de prospects
-- Techniques de découverte des besoins
-- Stratégies de closing vers rendez-vous
-
-## Gestion des Objections
-- "C'est trop cher" → réponse type
-- "Je dois réfléchir" → réponse type
-- "Je n'ai pas le temps" → réponse type
-- Autres objections courantes dans ${scrapedData.industry}
-
-## Guardrails & Limites
-- Ce que l'agent PEUT faire
-- Ce que l'agent NE PEUT PAS faire
-- Comment rediriger si hors contexte
-- Gestion des urgences ou demandes sensibles
-
-## Style de Réponse
-- Longueur des réponses (concises pour du vocal)
-- Utilisation d'exemples concrets
-- Empathie et écoute active
-- Langage naturel (éviter le jargon excessif)
-
-## Call-to-Action Principal
-- Objectif: prendre rendez-vous pour appel de consultation
-- Alternatives si prospect pas prêt (newsletter, ressources gratuites)
-
-EXIGENCES CRITIQUES:
-✅ Prompt en MARKDOWN complet (avec sections ##, sous-sections ###, bullet points)
-✅ Détaillé et actionable (1500-2000 mots minimum)
-✅ Exemples concrets de réponses types
-✅ Ton consultatif et expert (pas de fluff marketing)
-✅ Focus ROI et résultats mesurables
-✅ Adapté spécifiquement à l'industrie ${scrapedData.industry}
-
-**Génère maintenant le system prompt complet en Markdown:**`;
+Output: ONLY the system prompt in Markdown.
+`.trim();
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.8,
-    max_tokens: 3000 // Augmenté pour un prompt complet
+    temperature: 0.6,
+    max_tokens: 2600
   });
 
   return response.choices[0].message.content.trim();
 }
 
-async function generateBrandKitPrompt(companyName, scrapedData) {
-  const colors = scrapedData.colors || [];
-  const prompt = `Crée un brief de brand kit professionnel pour ${companyName}.
+async function generateBrandKitPrompt(companyName, url, scrapedData, lang) {
+  const lp = langPack(lang);
+  const colors = (scrapedData.colors || []).slice(0, 6);
+  const headings = scrapedData.headings || { h1: [], h2: [] };
 
-ÉLÉMENTS DÉTECTÉS:
-- Couleurs principales: ${colors.slice(0, 3).join(', ') || 'Non détectées'}
-- Industrie: ${scrapedData.industry || 'Non détectée'}
-- Logo: ${scrapedData.logoUrl || 'Non trouvé'}
+  const prompt = `
+You are a senior brand strategist.
+Create a precise brand kit brief for "${companyName}" based ONLY on the evidence provided.
 
-Inclus:
-1. Palette de couleurs (codes hex)
-2. Typographie recommandée
-3. Style visuel (moderne/classique/minimaliste)
-4. Guidelines d'usage
+Write in ${lp.name}.
 
-Format: Texte structuré avec sections claires.`;
+Evidence:
+- Website: ${url}
+- Meta description: ${scrapedData.meta?.description || 'N/A'}
+- OG title: ${scrapedData.meta?.ogTitle || 'N/A'}
+- Headings (H1): ${(headings.h1 || []).slice(0, 3).join(' | ') || 'N/A'}
+- Headings (H2): ${(headings.h2 || []).slice(0, 10).join(' | ') || 'N/A'}
+- Extracted colors (may include noise): ${colors.join(', ') || 'N/A'}
+- Logo URL: ${scrapedData.logoUrl || 'N/A'}
+
+Hard rules:
+- Do NOT invent services, claims, prices, certifications, or locations.
+- If something is unknown, write "Unknown" (or the equivalent in ${lp.name}).
+- Make recommendations, but label them as recommendations (not facts).
+
+Deliverables (structured):
+1) Brand positioning (1 paragraph)
+2) Tone of voice (5 bullets)
+3) Visual direction (5 bullets)
+4) Color palette: pick 3-5 colors (HEX) from extracted evidence, explain role of each
+5) Typography: 2 Google Fonts suggestions + usage
+6) Do/Don't guidelines (6 bullets total)
+7) Social design rules: spacing, hierarchy, safe areas, contrast, CTA button style
+`.trim();
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.55,
+    max_tokens: 900
+  });
+
+  return response.choices[0].message.content.trim();
+}
+
+async function generateLoomScript(companyName, url, scrapedData, lang) {
+  const lp = langPack(lang);
+  const issues = (scrapedData.issues || []).slice(0, 6);
+
+  const prompt = `
+Write a 2-minute Loom video script to present the "Stealth Upgrade" to ${companyName}.
+
+Write in ${lp.name}.
+Tone: consultative, high-trust, direct, premium.
+Constraints:
+- Mention 2-4 specific issues detected (from list below).
+- Explain: upgraded website + automation + 12 social images/month + automated posting in GHL.
+- End with a soft CTA to book a 15-min call.
+- Provide timestamps.
+
+Site: ${url}
+Industry: ${scrapedData.industry || 'Unknown'}
+Score: ${scrapedData.score || 0}/100
+Issues: ${issues.join(' | ') || 'None'}
+`.trim();
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.7,
-    max_tokens: 600
+    max_tokens: 950
   });
 
   return response.choices[0].message.content.trim();
 }
 
-async function generateLoomScript(companyName, url, scrapedData) {
-  const issues = scrapedData.issues || [];
-  const prompt = `Crée un script Loom vidéo professionnel (2 minutes) pour présenter un package d'upgrade à ${companyName}.
-
-INFORMATIONS:
-- Site: ${url}
-- Score actuel: ${scrapedData.score}/100
-- Problèmes: ${issues.join(', ')}
-- Industrie: ${scrapedData.industry}
-
-STRUCTURE:
-1. INTRO (0:00-0:15): Accroche personnalisée
-2. PROBLÈMES (0:15-1:00): Détails spécifiques des ${issues.length} problèmes
-3. SOLUTION (1:00-1:45): Package complet (design, chatbot, optimisations)
-4. CLOSING (1:45-2:00): Call-to-action pour un appel
-
-Ton: Consultative, expert, orienté ROI.
-Format: Script avec timestamps.`;
-
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.8,
-    max_tokens: 800
-  });
-
-  return response.choices[0].message.content.trim();
-}
-
-async function generateEmailTemplates(companyName, url, scrapedData) {
-  const issues = scrapedData.issues || [];
+async function generateEmailTemplates(companyName, url, scrapedData, lang) {
+  const lp = langPack(lang);
+  const issues = (scrapedData.issues || []).slice(0, 6);
   const score = scrapedData.score || 0;
-  
-  const prompt = `Crée 3 emails de prospection B2B ultra-personnalisés pour ${companyName}.
 
-CONTEXTE:
-- Site: ${url}
-- Score audit: ${score}/100
-- Problèmes spécifiques: ${issues.join(', ')}
-- Industrie: ${scrapedData.industry}
+  const prompt = `
+Create 3 cold outreach emails for ${companyName}.
+Write in ${lp.name}.
+Audience: business owner / decision maker.
+Offer: free audit PDF + 6 ready-to-post social images + a modernized website prototype.
 
-EMAIL 1 (INITIAL):
-- Subject line percutant
-- Mention de 2-3 problèmes spécifiques détectés
-- Proposition de valeur claire (audit + prototype + chatbot)
-- CTA: appel 15 min
+Constraints:
+- Email #1 includes the lead magnet: "Audit PDF + 6 images"
+- Email #2 is a short follow-up
+- Email #3 is a respectful closing / open loop
+- Use variables: {{first_name}}, {{company}}, {{website}}, {{calendar_link}}
+- Keep each email under 180 words.
+- Mention 2-3 issues detected (do not invent).
 
-EMAIL 2 (FOLLOW-UP J+3):
-- Subject: rappel subtil
-- Ajout d'un insight ou stat pertinente
-- Réaffirmation de la valeur
-- CTA: disponibilités
+Context:
+Website: ${url}
+Score: ${score}/100
+Issues: ${issues.join(' | ') || 'None'}
+Industry: ${scrapedData.industry || 'Unknown'}
 
-EMAIL 3 (CLOSING J+7):
-- Subject: dernier rappel non-insistant
-- Ton respectueux
-- Porte ouverte pour futur
-- CTA soft
-
-Format JSON:
-[
-  {
-    "subject": "...",
-    "from": "Darly <darly@intelliaiscale.com>",
-    "body": "..."
-  }
-]
-
-Ton: Professionnel, consultatif, personnalisé, orienté ROI.`;
+Return JSON with exactly:
+{
+  "emails": [
+    {"subject":"...", "body":"..."},
+    {"subject":"...", "body":"..."},
+    {"subject":"...", "body":"..."}
+  ]
+}
+`.trim();
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.8,
+    temperature: 0.75,
     max_tokens: 1200,
-    response_format: { type: "json_object" }
+    response_format: { type: 'json_object' }
   });
 
   const result = JSON.parse(response.choices[0].message.content);
   return result.emails || [];
+}
+
+// Bilingual copy for the upgraded website
+async function generateWebsiteCopyBilingual(companyName, url, scrapedData, detectedLang, region) {
+  const pair = getBilingualPair(region);
+
+  // default language = detected site language if it matches the bilingual pair, else fallback to pair.primary
+  const defaultLang = ([pair.primary, pair.secondary].includes(detectedLang)) ? detectedLang : pair.primary;
+  const secondaryLang = (defaultLang === pair.primary) ? pair.secondary : pair.primary;
+
+  const headings = scrapedData.headings || { h1: [], h2: [] };
+  const services = (scrapedData.sections || []).map(s => s.title).slice(0, 8);
+
+  const prompt = `
+You are a website conversion copywriter.
+Create bilingual copy for a modern one-page website for "${companyName}".
+
+Languages:
+- default_lang: ${defaultLang}
+- secondary_lang: ${secondaryLang}
+
+Hard rules:
+- Don't invent facts (locations, pricing, certifications).
+- If unknown, keep generic but professional.
+- Make it high-conversion: clear value, trust, CTA.
+- Keep it concise.
+
+Input evidence:
+- Website: ${url}
+- Meta description: ${scrapedData.meta?.description || 'N/A'}
+- Headings H1: ${(headings.h1 || []).slice(0, 2).join(' | ') || 'N/A'}
+- Headings H2: ${(headings.h2 || []).slice(0, 8).join(' | ') || 'N/A'}
+- Service-like section titles: ${services.join(' | ') || 'N/A'}
+- Industry: ${scrapedData.industry || 'Unknown'}
+
+Return JSON:
+{
+  "default_lang":"${defaultLang}",
+  "secondary_lang":"${secondaryLang}",
+  "nav": {"home":"", "services":"", "about":"", "contact":"", "cta_button":""},
+  "hero": {"headline":"", "subheadline":"", "primary_cta":"", "secondary_cta":""},
+  "services": [{"title":"", "desc":""}, ... up to 6],
+  "about": {"title":"", "body":""},
+  "trust": {"title":"", "bullets":["","", ""]},
+  "contact": {"title":"", "body":"", "cta":"", "note":""},
+  "toggle_label":"${pair.toggle}"
+}
+Provide both languages by nesting:
+{
+  "copy": {
+    "${defaultLang}": { ... },
+    "${secondaryLang}": { ... }
+  }
+}
+`.trim();
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.55,
+    max_tokens: 1700,
+    response_format: { type: 'json_object' }
+  });
+
+  const json = JSON.parse(response.choices[0].message.content);
+
+  // Minimal sanity fallback
+  if (!json.default_lang) json.default_lang = defaultLang;
+  if (!json.secondary_lang) json.secondary_lang = secondaryLang;
+  return json;
 }
 
 module.exports = { generateAllContent };

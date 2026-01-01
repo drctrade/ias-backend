@@ -1,246 +1,280 @@
 // ================================
-// MODULE HTML GENERATOR - Génération de code HTML optimisé GHL
+// MODULE HTML GENERATOR - Site modernisé (v5.0)
+// - Multilingue (bilingue EN/FR ou EN/ES avec toggle)
+// - Langue par défaut = langue du site détectée (si compatible)
+// - Compatible GHL (HTML/CSS/JS simple, Tailwind CDN ok)
 // ================================
 
-const OpenAI = require('openai');
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-async function generateModernHTML(companyName, url, scrapedData, aiContent) {
-  console.log('[HTML] Génération du code HTML modernisé avec GPT-4...');
-
-  const colors = scrapedData.colors || [];
-  const primaryColor = colors[0] || '#5bc236';
-  const secondaryColor = colors[1] || '#0f204b';
-  const logoUrl = scrapedData.logoUrl || '';
-  const sections = scrapedData.sections || [];
-
-  const prompt = `Tu es un expert développeur web spécialisé dans GoHighLevel (GHL).
-
-MISSION: Créer un site web moderne, responsive et optimisé pour la conversion pour ${companyName}.
-
-INFORMATIONS DU SITE ACTUEL:
-- URL: ${url}
-- Industrie: ${scrapedData.industry || 'Non détecté'}
-- Score actuel: ${scrapedData.score}/100
-- Problèmes détectés: ${scrapedData.issues.join(', ')}
-- Sections existantes: ${sections.map(s => s.title).join(', ')}
-
-COULEURS BRAND:
-- Primaire: ${primaryColor}
-- Secondaire: ${secondaryColor}
-
-EXIGENCES TECHNIQUES:
-1. Code HTML5 sémantique et valide
-2. Compatible GoHighLevel (sections GHL-friendly)
-3. Tailwind CSS via CDN (pas de build)
-4. Responsive mobile-first
-5. Performance optimisée
-6. SEO-friendly
-
-SECTIONS REQUISES (toutes avec contenu réel):
-1. HEADER: Navigation sticky avec logo, liens menu, CTA prominent
-2. HERO: Titre accrocheur, sous-titre bénéfice, CTA primaire + secondaire, image/illustration
-3. SERVICES: 3-6 services clés avec icônes, titres, descriptions
-4. ABOUT: Présentation entreprise, valeurs, équipe (si pertinent)
-5. TESTIMONIALS: 3-4 témoignages avec noms, photos, citations
-6. STATS/RESULTS: Chiffres clés, résultats, certifications
-7. CTA SECTION: Appel à l'action final avec formulaire ou bouton
-8. FOOTER: Coordonnées, liens, réseaux sociaux, mentions légales
-
-STYLE:
-- Design moderne et professionnel
-- Animations subtiles (hover, scroll)
-- Typographie hiérarchisée
-- Espacement généreux
-- Contrastes optimisés
-
-OPTIMISATIONS GHL:
-- Sections commentées pour identification facile
-- Classes Tailwind uniquement (pas de CSS custom complexe)
-- Structure modulaire (sections indépendantes)
-- Formulaires avec attributs data-form-ghl
-- Boutons CTA avec tracking-ready classes
-
-CONTENU:
-- Texte professionnel et engageant
-- Adapté à l'industrie ${scrapedData.industry}
-- Orienté bénéfices clients
-- Call-to-actions clairs
-
-Génère le code HTML COMPLET (pas de placeholder, pas de "à compléter").
-Minimum 200 lignes de code.
-Qualité production-ready.
-
-Format: Code HTML uniquement, sans markdown ni explications.`;
-
-  try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 4000 // Code HTML complet
-    });
-
-    let htmlCode = response.choices[0].message.content.trim();
-    
-    // Nettoyer le code (enlever les balises markdown si présentes)
-    htmlCode = htmlCode.replace(/```html\n?/g, '').replace(/```\n?/g, '');
-    
-    console.log(`[HTML] Code HTML généré: ${htmlCode.length} caractères`);
-    return htmlCode;
-    
-  } catch (error) {
-    console.error('[HTML] Erreur génération:', error.message);
-    // Fallback: code HTML basique mais complet
-    return generateFallbackHTML(companyName, primaryColor, secondaryColor, logoUrl, sections, url);
-  }
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function generateFallbackHTML(companyName, primaryColor, secondaryColor, logoUrl, sections, siteUrl) {
-  const logoHTML = logoUrl ? `<img src="${logoUrl}" alt="${companyName} Logo" class="h-12">` : `<span class="text-2xl font-bold">${companyName}</span>`;
-  
-  const servicesHTML = sections.slice(0, 6).map((sec, i) => `
-        <div class="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow">
-            <div class="w-16 h-16 bg-gradient-to-br from-[${primaryColor}] to-[${secondaryColor}] rounded-lg mb-6 flex items-center justify-center text-white text-2xl font-bold">
-                ${i + 1}
-            </div>
-            <h3 class="text-2xl font-bold mb-4">${sec.title}</h3>
-            <p class="text-gray-600">Service professionnel de qualité supérieure adapté à vos besoins.</p>
+function generateModernHTML(companyName, siteUrl, colors = [], sections = [], logoUrl = null, websiteCopy = null) {
+  const primaryColor = colors?.[0] || '#2D7A8F';
+  const secondaryColor = colors?.[1] || '#0f204b';
+
+  // If no AI copy provided, fallback to FR (legacy-ish)
+  const defaultLang = websiteCopy?.default_lang || 'fr';
+  const secondaryLang = websiteCopy?.secondary_lang || (defaultLang === 'en' ? 'fr' : 'en');
+  const toggleLabel = websiteCopy?.toggle_label || 'LANG';
+
+  const copy = websiteCopy?.copy || {};
+  const C1 = copy[defaultLang] || {};
+  const C2 = copy[secondaryLang] || {};
+
+  // fallback copy blocks
+  const fallbackNav = (lang) => {
+    if (lang === 'fr') return { home:'Accueil', services:'Services', about:'À propos', contact:'Contact', cta_button:'Nous contacter' };
+    if (lang === 'es') return { home:'Inicio', services:'Servicios', about:'Acerca de', contact:'Contacto', cta_button:'Contáctanos' };
+    return { home:'Home', services:'Services', about:'About', contact:'Contact', cta_button:'Contact us' };
+  };
+
+  const nav1 = C1.nav || fallbackNav(defaultLang);
+  const nav2 = C2.nav || fallbackNav(secondaryLang);
+
+  const hero1 = C1.hero || {};
+  const hero2 = C2.hero || {};
+
+  const services1 = (C1.services || []).slice(0, 6);
+  const services2 = (C2.services || []).slice(0, 6);
+
+  const about1 = C1.about || {};
+  const about2 = C2.about || {};
+
+  const trust1 = C1.trust || {};
+  const trust2 = C2.trust || {};
+
+  const contact1 = C1.contact || {};
+  const contact2 = C2.contact || {};
+
+  const logoHTML = logoUrl
+    ? `<img src="${esc(logoUrl)}" alt="${esc(companyName)} Logo" class="h-10 md:h-12 object-contain">`
+    : `<span class="text-xl md:text-2xl font-bold">${esc(companyName)}</span>`;
+
+  // Services fallback from scraped sections if AI didn't provide
+  const sectionTitles = (sections || []).map(s => s.title).filter(Boolean).slice(0, 6);
+  const buildServiceCards = (svcs, fallbackTitles) => {
+    const list = (svcs && svcs.length) ? svcs : fallbackTitles.map(t => ({ title: t, desc: '' }));
+    return list.slice(0, 6).map((sec, i) => `
+      <div class="bg-white p-8 rounded-2xl shadow-lg hover:shadow-2xl transition-shadow">
+        <div class="w-14 h-14 bg-gradient-to-br from-[${primaryColor}] to-[${secondaryColor}] rounded-xl mb-6 flex items-center justify-center text-white text-xl font-bold">
+          ${i + 1}
         </div>
-  `).join('\n');
+        <h3 class="text-xl font-bold mb-3" data-i18n="services.${i}.title">${esc(sec.title || ('Service ' + (i+1)))}</h3>
+        <p class="text-gray-600" data-i18n="services.${i}.desc">${esc(sec.desc || '')}</p>
+      </div>
+    `).join('\n');
+  };
+
+  const servicesCardsHTML = buildServiceCards(services1, sectionTitles);
+
+  // JSON dictionaries embedded (for toggle)
+  const dict = {
+    [defaultLang]: {
+      nav: nav1,
+      hero: {
+        headline: hero1.headline || companyName,
+        subheadline: hero1.subheadline || '',
+        primary_cta: hero1.primary_cta || nav1.cta_button,
+        secondary_cta: hero1.secondary_cta || nav1.services
+      },
+      about: {
+        title: about1.title || '',
+        body: about1.body || ''
+      },
+      trust: {
+        title: trust1.title || '',
+        bullets: trust1.bullets || []
+      },
+      contact: {
+        title: contact1.title || nav1.contact,
+        body: contact1.body || '',
+        cta: contact1.cta || nav1.cta_button,
+        note: contact1.note || ''
+      },
+      services: services1.length ? services1 : sectionTitles.map(t => ({ title: t, desc: '' }))
+    },
+    [secondaryLang]: {
+      nav: nav2,
+      hero: {
+        headline: hero2.headline || companyName,
+        subheadline: hero2.subheadline || '',
+        primary_cta: hero2.primary_cta || nav2.cta_button,
+        secondary_cta: hero2.secondary_cta || nav2.services
+      },
+      about: {
+        title: about2.title || '',
+        body: about2.body || ''
+      },
+      trust: {
+        title: trust2.title || '',
+        bullets: trust2.bullets || []
+      },
+      contact: {
+        title: contact2.title || nav2.contact,
+        body: contact2.body || '',
+        cta: contact2.cta || nav2.cta_button,
+        note: contact2.note || ''
+      },
+      services: services2.length ? services2 : sectionTitles.map(t => ({ title: t, desc: '' }))
+    }
+  };
 
   return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="${esc(defaultLang)}">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${companyName} - Site Modernisé</title>
-    <meta name="description" content="Découvrez ${companyName}, votre partenaire de confiance.">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <style>
-        :root {
-            --primary: ${primaryColor};
-            --secondary: ${secondaryColor};
-        }
-        .gradient-bg {
-            background: linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%);
-        }
-        .btn-primary {
-            background: ${primaryColor};
-            color: white;
-            padding: 1rem 2rem;
-            border-radius: 0.5rem;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${esc(companyName)} - Modern Website</title>
+  <meta name="description" content="${esc(C1.meta_description || '')}">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root { --primary:${primaryColor}; --secondary:${secondaryColor}; }
+    .gradient-bg { background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); }
+    .btn-primary { background: var(--primary); color:#fff; padding: 0.9rem 1.4rem; border-radius: 0.85rem; font-weight: 700; transition: .2s; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,.18); }
+    .btn-ghost { border: 2px solid rgba(255,255,255,.85); color:#fff; padding:0.9rem 1.4rem; border-radius:0.85rem; font-weight:700; transition:.2s; }
+    .btn-ghost:hover { background:#fff; color: var(--primary); }
+    .lang-toggle { border:1px solid rgba(0,0,0,.12); border-radius:999px; padding: 6px 10px; font-weight:700; }
+  </style>
 </head>
-<body class="font-sans antialiased">
+<body class="font-sans antialiased bg-white text-gray-900">
 
-    <!-- Header / Navigation -->
-    <nav class="bg-white shadow-md sticky top-0 z-50">
-        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
-            ${logoHTML}
-            <div class="hidden md:flex space-x-8">
-                <a href="#accueil" class="text-gray-700 hover:text-[${primaryColor}] transition">Accueil</a>
-                <a href="#services" class="text-gray-700 hover:text-[${primaryColor}] transition">Services</a>
-                <a href="#apropos" class="text-gray-700 hover:text-[${primaryColor}] transition">À propos</a>
-                <a href="#contact" class="text-gray-700 hover:text-[${primaryColor}] transition">Contact</a>
-            </div>
-            <a href="#contact" class="btn-primary">Nous Contacter</a>
-        </div>
-    </nav>
+  <!-- Nav -->
+  <nav class="bg-white/95 backdrop-blur border-b border-gray-100 sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        ${logoHTML}
+      </div>
 
-    <!-- Hero Section -->
-    <section id="accueil" class="gradient-bg text-white py-24">
-        <div class="container mx-auto px-6 text-center">
-            <h1 class="text-5xl md:text-7xl font-bold mb-6">${companyName}</h1>
-            <p class="text-2xl md:text-3xl mb-8 opacity-90">Votre partenaire de confiance pour des solutions de qualité</p>
-            <div class="flex flex-col md:flex-row gap-4 justify-center">
-                <a href="#services" class="bg-white text-[${primaryColor}] px-8 py-4 rounded-lg font-bold text-lg hover:bg-opacity-90 transition">Découvrir nos services</a>
-                <a href="#contact" class="border-2 border-white text-white px-8 py-4 rounded-lg font-bold text-lg hover:bg-white hover:text-[${primaryColor}] transition">Prendre rendez-vous</a>
-            </div>
-        </div>
-    </section>
+      <div class="hidden md:flex items-center gap-7 text-sm font-semibold">
+        <a href="#home" class="hover:text-[${primaryColor}] transition" data-i18n="nav.home">${esc(nav1.home)}</a>
+        <a href="#services" class="hover:text-[${primaryColor}] transition" data-i18n="nav.services">${esc(nav1.services)}</a>
+        <a href="#about" class="hover:text-[${primaryColor}] transition" data-i18n="nav.about">${esc(nav1.about)}</a>
+        <a href="#contact" class="hover:text-[${primaryColor}] transition" data-i18n="nav.contact">${esc(nav1.contact)}</a>
+      </div>
 
-    <!-- Services Section -->
-    <section id="services" class="py-20 bg-gray-50">
-        <div class="container mx-auto px-6">
-            <h2 class="text-4xl md:text-5xl font-bold text-center mb-4">Nos Services</h2>
-            <p class="text-xl text-gray-600 text-center mb-16">Des solutions professionnelles adaptées à vos besoins</p>
-            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                ${servicesHTML}
-            </div>
-        </div>
-    </section>
+      <div class="flex items-center gap-3">
+        <button class="lang-toggle text-xs" id="langToggle">${esc(toggleLabel)}</button>
+        <a href="#contact" class="btn-primary hidden sm:inline-flex items-center gap-2">
+          <i class="fa-solid fa-calendar-check"></i>
+          <span data-i18n="nav.cta_button">${esc(nav1.cta_button)}</span>
+        </a>
+      </div>
+    </div>
+  </nav>
 
-    <!-- About Section -->
-    <section id="apropos" class="py-20 bg-white">
-        <div class="container mx-auto px-6">
-            <div class="grid md:grid-cols-2 gap-12 items-center">
-                <div>
-                    <h2 class="text-4xl md:text-5xl font-bold mb-6">À propos de ${companyName}</h2>
-                    <p class="text-lg text-gray-700 mb-6">Avec des années d'expérience dans notre domaine, nous sommes fiers d'offrir des services de qualité supérieure à nos clients.</p>
-                    <p class="text-lg text-gray-700 mb-8">Notre équipe d'experts s'engage à fournir des résultats exceptionnels et un service client irréprochable.</p>
-                    <a href="#contact" class="btn-primary inline-block">En savoir plus</a>
-                </div>
-                <div class="bg-gradient-to-br from-[${primaryColor}] to-[${secondaryColor}] rounded-2xl h-96"></div>
-            </div>
-        </div>
-    </section>
+  <!-- Hero -->
+  <section id="home" class="gradient-bg text-white">
+    <div class="max-w-6xl mx-auto px-5 py-16 md:py-24 text-center">
+      <p class="inline-flex items-center gap-2 text-xs md:text-sm bg-white/15 px-4 py-2 rounded-full mb-6">
+        <i class="fa-solid fa-sparkles"></i>
+        <span>Premium • Conversion • Trust</span>
+      </p>
 
-    <!-- CTA Section -->
-    <section id="contact" class="gradient-bg text-white py-20">
-        <div class="container mx-auto px-6 text-center">
-            <h2 class="text-4xl md:text-5xl font-bold mb-6">Prêt à commencer ?</h2>
-            <p class="text-xl mb-8 opacity-90">Contactez-nous dès aujourd'hui pour discuter de votre projet</p>
-            <a href="tel:+33123456789" class="bg-white text-[${primaryColor}] px-10 py-5 rounded-lg font-bold text-xl hover:bg-opacity-90 transition inline-block">
-                <i class="fas fa-phone mr-2"></i> Appelez-nous maintenant
-            </a>
-        </div>
-    </section>
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight mb-5" data-i18n="hero.headline">${esc(hero1.headline || companyName)}</h1>
+      <p class="text-lg md:text-2xl opacity-90 max-w-3xl mx-auto mb-10" data-i18n="hero.subheadline">${esc(hero1.subheadline || '')}</p>
 
-    <!-- Footer -->
-    <footer class="bg-gray-900 text-white py-12">
-        <div class="container mx-auto px-6">
-            <div class="grid md:grid-cols-3 gap-8">
-                <div>
-                    <h3 class="text-2xl font-bold mb-4">${companyName}</h3>
-                    <p class="text-gray-400">Votre partenaire de confiance depuis des années.</p>
-                </div>
-                <div>
-                    <h4 class="text-xl font-bold mb-4">Liens rapides</h4>
-                    <ul class="space-y-2">
-                        <li><a href="#accueil" class="text-gray-400 hover:text-white transition">Accueil</a></li>
-                        <li><a href="#services" class="text-gray-400 hover:text-white transition">Services</a></li>
-                        <li><a href="#apropos" class="text-gray-400 hover:text-white transition">À propos</a></li>
-                        <li><a href="#contact" class="text-gray-400 hover:text-white transition">Contact</a></li>
-                    </ul>
-                </div>
-                <div>
-                    <h4 class="text-xl font-bold mb-4">Contact</h4>
-                    <p class="text-gray-400 mb-2"><i class="fas fa-envelope mr-2"></i> contact@${companyName.toLowerCase().replace(/\s/g, '')}.com</p>
-                    <p class="text-gray-400 mb-4"><i class="fas fa-phone mr-2"></i> +33 1 23 45 67 89</p>
-                    <div class="flex space-x-4">
-                        <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-facebook fa-2x"></i></a>
-                        <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-linkedin fa-2x"></i></a>
-                        <a href="#" class="text-gray-400 hover:text-white transition"><i class="fab fa-instagram fa-2x"></i></a>
-                    </div>
-                </div>
-            </div>
-            <div class="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-                <p>&copy; ${new Date().getFullYear()} ${companyName}. Tous droits réservés. | Site original: <a href="${siteUrl}" class="hover:text-white transition">${siteUrl}</a></p>
-            </div>
+      <div class="flex flex-col sm:flex-row gap-3 justify-center">
+        <a href="#contact" class="btn-primary" data-i18n="hero.primary_cta">${esc(hero1.primary_cta || nav1.cta_button)}</a>
+        <a href="#services" class="btn-ghost" data-i18n="hero.secondary_cta">${esc(hero1.secondary_cta || nav1.services)}</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Services -->
+  <section id="services" class="py-16 md:py-20 bg-gray-50">
+    <div class="max-w-6xl mx-auto px-5">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-extrabold" data-i18n="nav.services">${esc(nav1.services)}</h2>
+        <p class="text-gray-600 mt-3 max-w-2xl mx-auto">High-quality services adapted to your needs.</p>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-7">
+        ${servicesCardsHTML}
+      </div>
+    </div>
+  </section>
+
+  <!-- About -->
+  <section id="about" class="py-16 md:py-20 bg-white">
+    <div class="max-w-6xl mx-auto px-5 grid md:grid-cols-2 gap-10 items-center">
+      <div>
+        <h2 class="text-3xl md:text-4xl font-extrabold mb-4" data-i18n="about.title">${esc(about1.title || '')}</h2>
+        <p class="text-gray-700 leading-relaxed" data-i18n="about.body">${esc(about1.body || '')}</p>
+
+        <div class="mt-7 rounded-2xl border border-gray-100 bg-gray-50 p-6">
+          <h3 class="font-bold mb-3" data-i18n="trust.title">${esc(trust1.title || '')}</h3>
+          <ul class="space-y-2 text-gray-700">
+            ${(trust1.bullets || []).slice(0,3).map((b, i) => `<li class="flex gap-2"><i class="fa-solid fa-check text-[${primaryColor}] mt-1"></i><span data-i18n="trust.bullets.${i}">${esc(b)}</span></li>`).join('')}
+          </ul>
         </div>
-    </footer>
+      </div>
+
+      <div class="rounded-3xl h-80 md:h-96 gradient-bg opacity-95"></div>
+    </div>
+  </section>
+
+  <!-- Contact -->
+  <section id="contact" class="py-16 md:py-20 bg-gray-950 text-white">
+    <div class="max-w-6xl mx-auto px-5 text-center">
+      <h2 class="text-3xl md:text-4xl font-extrabold mb-4" data-i18n="contact.title">${esc(contact1.title || nav1.contact)}</h2>
+      <p class="text-white/80 max-w-2xl mx-auto mb-8" data-i18n="contact.body">${esc(contact1.body || '')}</p>
+
+      <a href="#" class="inline-flex items-center gap-2 bg-white text-gray-900 px-8 py-4 rounded-2xl font-extrabold hover:opacity-90 transition" data-i18n="contact.cta">
+        <i class="fa-solid fa-arrow-right"></i>
+        ${esc(contact1.cta || nav1.cta_button)}
+      </a>
+
+      <p class="text-white/60 text-sm mt-6" data-i18n="contact.note">${esc(contact1.note || '')}</p>
+
+      <p class="text-white/40 text-xs mt-10">
+        © ${new Date().getFullYear()} ${esc(companyName)} • Original site: <a class="underline" href="${esc(siteUrl)}">${esc(siteUrl)}</a>
+      </p>
+    </div>
+  </section>
+
+  <script>
+    const DICT = ${JSON.stringify(dict)};
+    let currentLang = "${defaultLang}";
+    const secondaryLang = "${secondaryLang}";
+
+    function getByPath(obj, path) {
+      return path.split('.').reduce((o, k) => (o && o[k] !== undefined) ? o[k] : null, obj);
+    }
+
+    function applyLang(lang) {
+      const data = DICT[lang] || DICT["${defaultLang}"];
+      document.documentElement.lang = lang;
+
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const value = getByPath(data, key);
+        if (value !== null && value !== undefined && String(value).length) {
+          el.textContent = value;
+        }
+      });
+
+      // Services titles/descs
+      (data.services || []).slice(0, 6).forEach((svc, i) => {
+        const tEl = document.querySelector('[data-i18n="services.' + i + '.title"]');
+        const dEl = document.querySelector('[data-i18n="services.' + i + '.desc"]');
+        if (tEl && svc.title) tEl.textContent = svc.title;
+        if (dEl) dEl.textContent = svc.desc || '';
+      });
+
+      currentLang = lang;
+    }
+
+    document.getElementById('langToggle').addEventListener('click', () => {
+      const next = (currentLang === "${defaultLang}") ? secondaryLang : "${defaultLang}";
+      applyLang(next);
+    });
+
+    // Init
+    applyLang(currentLang);
+  </script>
 
 </body>
 </html>`;
