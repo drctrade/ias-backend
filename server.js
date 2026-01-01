@@ -14,6 +14,7 @@ const scraper = require('./modules/scraper');
 const pdfGenerator = require('./modules/pdfGenerator');
 const contentGenerator = require('./modules/contentGenerator');
 const imageGenerator = require('./modules/imageGenerator');
+const htmlGenerator = require('./modules/htmlGenerator');
 const prospectFinder = require('./modules/prospectFinder');
 const supabaseClient = require('./modules/supabase');
 
@@ -91,11 +92,11 @@ app.post('/api/generate/package', async (req, res) => {
 
     const finalCompanyName = companyName || scrapedData.title || 'Entreprise';
 
-    console.log(`[PACKAGE] 📊 Étape 3/7: Génération HTML GHL...`);
-    const htmlCode = generateHTMLCode(finalCompanyName, scrapedData.colors, scrapedData.logoUrl, scrapedData.sections, url);
-
-    console.log(`[PACKAGE] 📊 Étape 4/7: Génération contenus IA...`);
+    console.log(`[PACKAGE] 📊 Étape 3/7: Génération HTML GHL avec GPT-4...`);
     const aiContent = await contentGenerator.generateAllContent(finalCompanyName, url, scrapedData);
+
+    console.log(`[PACKAGE] 📊 Étape 4/7: Génération code HTML complet...`);
+    const htmlCode = await htmlGenerator.generateModernHTML(finalCompanyName, url, scrapedData, aiContent);
 
     console.log(`[PACKAGE] 📊 Étape 5/7: Génération visuels Gemini...`);
     const socialVisuals = await imageGenerator.generateSocialVisuals(finalCompanyName, scrapedData.colors, scrapedData.industry);
@@ -142,61 +143,6 @@ app.post('/api/generate/package', async (req, res) => {
     });
   }
 });
-
-// ================================
-// HELPER FUNCTIONS
-// ================================
-
-function generateHTMLCode(companyName, colors, logoUrl, sections, siteUrl) {
-  const primaryColor = colors[0] || '#5bc236';
-  const secondaryColor = colors[1] || '#0f204b';
-  
-  const sectionsHTML = sections.slice(0, 3).map((sec, i) => `
-    <section class="py-16 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-        <div class="container mx-auto px-4">
-            <h2 class="text-4xl font-bold text-center mb-12">${sec.title}</h2>
-            <p class="text-center text-gray-600">Contenu à personnaliser</p>
-        </div>
-    </section>
-  `).join('\n');
-  
-  const logoHTML = logoUrl ? `<img src="${logoUrl}" alt="${companyName} Logo" class="h-12">` : `<h1 class="text-3xl font-bold">${companyName}</h1>`;
-  
-  return `<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${companyName} - Site Modernisé</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        :root {
-            --primary: ${primaryColor};
-            --secondary: ${secondaryColor};
-        }
-        .gradient-bg {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-        }
-    </style>
-</head>
-<body>
-    <header class="gradient-bg text-white py-4">
-        <div class="container mx-auto px-4 flex justify-between items-center">
-            ${logoHTML}
-            <nav>
-                <button class="bg-white text-gray-900 px-6 py-2 rounded-full font-bold">Contact</button>
-            </nav>
-        </div>
-    </header>
-
-    ${sectionsHTML}
-
-    <footer class="bg-gray-900 text-white py-8 text-center">
-        <p>&copy; 2025 ${companyName}. Site original: <a href="${siteUrl}" class="underline">${siteUrl}</a></p>
-    </footer>
-</body>
-</html>`;
-}
 
 // ================================
 // START SERVER
