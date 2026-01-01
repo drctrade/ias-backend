@@ -74,6 +74,65 @@ app.get('/api/packages/:id', async (req, res) => {
   }
 });
 
+// Stream Audit PDF (no base64 decoding in browser)
+app.get('/api/packages/:id/pdf/audit', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pkg = await supabaseClient.getPackageById(id);
+
+    if (!pkg || !pkg.audit_report_pdf) {
+      return res.status(404).json({ success: false, error: 'PDF non trouvé' });
+    }
+
+    let base64Data = pkg.audit_report_pdf;
+    if (typeof base64Data === 'string' && base64Data.startsWith('data:application/pdf;base64,')) {
+      base64Data = base64Data.replace('data:application/pdf;base64,', '');
+    }
+
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const download = req.query.download === '1' || req.query.download === 'true';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="audit_${(pkg.company_name || 'company').replace(/\s+/g,'_')}.pdf"`);
+
+    return res.send(buffer);
+  } catch (error) {
+    console.error('[API] Erreur stream audit PDF:', error.message);
+    return res.status(500).json({ success: false, error: 'Erreur serveur PDF' });
+  }
+});
+
+// Stream Proposal PDF
+app.get('/api/packages/:id/pdf/proposal', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pkg = await supabaseClient.getPackageById(id);
+
+    if (!pkg || !pkg.proposal_pdf) {
+      return res.status(404).json({ success: false, error: 'PDF non trouvé' });
+    }
+
+    let base64Data = pkg.proposal_pdf;
+    if (typeof base64Data === 'string' && base64Data.startsWith('data:application/pdf;base64,')) {
+      base64Data = base64Data.replace('data:application/pdf;base64,', '');
+    }
+
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const download = req.query.download === '1' || req.query.download === 'true';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="proposition_${(pkg.company_name || 'company').replace(/\s+/g,'_')}.pdf"`);
+
+    return res.send(buffer);
+  } catch (error) {
+    console.error('[API] Erreur stream proposal PDF:', error.message);
+    return res.status(500).json({ success: false, error: 'Erreur serveur PDF' });
+  }
+});
+
+
 // Generate complete package
 app.post('/api/generate/package', async (req, res) => {
   const { url, companyName } = req.body;
@@ -103,7 +162,8 @@ app.post('/api/generate/package', async (req, res) => {
 
     console.log(`[PACKAGE] 📊 Étape 6/7: Génération PDF...`);
     const auditPDF = await pdfGenerator.generateAuditPDF(finalCompanyName, url, scrapedData, aiContent);
-    const proposalPDF = await pdfGenerator.generateProposalPDF(finalCompanyName, url, scrapedData);
+    const providerLogoUrl = process.env.PROVIDER_LOGO_URL || 'https://storage.googleapis.com/msgsndr/3JVjplwbMF0mBlGPnSIp/media/67d72a6b1031c95c8a996682.png';
+    const proposalPDF = await pdfGenerator.generateProposalPDF(finalCompanyName, url, scrapedData, providerLogoUrl);
 
     console.log(`[PACKAGE] 📊 Étape 7/7: Sauvegarde Supabase...`);
     const packageData = {
