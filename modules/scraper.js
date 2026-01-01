@@ -25,19 +25,15 @@ async function scrapeWebsite(url) {
     
     // Scraper le site avec Firecrawl
     const result = await app.scrapeUrl(url, {
-      formats: ['html', 'markdown', 'screenshot'],
-      waitFor: 2000
+      formats: ['html', 'markdown']
     });
     
-    console.log('[SCRAPER] Page chargee, extraction des donnees...');
+    console.log('[SCRAPER] Reponse Firecrawl recue');
+    console.log('[SCRAPER] Type de result:', typeof result);
     
-    if (!result.success) {
-      throw new Error('Firecrawl scraping failed');
-    }
-    
-    const data = result.data;
-    const html = data.html || '';
-    const metadata = data.metadata || {};
+    // Firecrawl retourne directement les données
+    const html = result.html || result.content || '';
+    const metadata = result.metadata || {};
     
     // Extraire les couleurs depuis le HTML
     const colors = extractColorsFromHTML(html);
@@ -51,7 +47,7 @@ async function scrapeWebsite(url) {
     // Analyser les problèmes
     const issues = analyzeIssues(html, metadata);
     
-    const title = metadata.title || data.title || 'Sans titre';
+    const title = metadata.title || result.title || 'Sans titre';
     const score = Math.max(100 - (issues.length * 10), 50);
     
     console.log('[SCRAPER] Donnees extraites:', {
