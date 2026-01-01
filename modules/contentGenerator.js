@@ -9,7 +9,7 @@ const openai = new OpenAI({
 });
 
 async function generateAllContent(companyName, url, scrapedData) {
-  console.log('[CONTENT] Génération du contenu AI...');
+  console.log('[CONTENT] Génération du contenu AI avec GPT-4...');
 
   try {
     const [systemPrompt, brandKitPrompt, loomScript, emailTemplates] = await Promise.all([
@@ -32,94 +32,138 @@ async function generateAllContent(companyName, url, scrapedData) {
 }
 
 async function generateSystemPrompt(companyName, url, scrapedData) {
-  return `Tu es l'assistant virtuel de ${companyName} (${url}).
+  const prompt = `Crée un system prompt professionnel pour un chatbot IA représentant ${companyName} (${url}).
 
-Ton rôle:
-- Répondre aux questions sur les services
-- Qualifier les prospects
-- Proposer des rendez-vous
+INFORMATIONS DU SITE:
+- Industrie: ${scrapedData.industry || 'Non détecté'}
+- Score actuel: ${scrapedData.score}/100
+- Problèmes détectés: ${scrapedData.issues.join(', ')}
 
-Ton de communication:
-- Professionnel et chaleureux
-- Français impeccable
-- Orienté solution`;
+Le chatbot doit:
+1. Refléter l'expertise de ${companyName}
+2. Qualifier les prospects intelligemment
+3. Proposer des rendez-vous de manière naturelle
+4. Être professionnel mais chaleureux
+
+Format: Texte direct, sans balises markdown.`;
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+    max_tokens: 500
+  });
+
+  return response.choices[0].message.content.trim();
 }
 
 async function generateBrandKitPrompt(companyName, scrapedData) {
   const colors = scrapedData.colors || [];
-  return `Brand Kit pour ${companyName}
+  const prompt = `Crée un brief de brand kit professionnel pour ${companyName}.
 
-Couleurs principales: ${colors.slice(0, 3).join(', ')}
-Style: Moderne et professionnel
-Logo: ${scrapedData.logoUrl || 'À définir'}`;
+ÉLÉMENTS DÉTECTÉS:
+- Couleurs principales: ${colors.slice(0, 3).join(', ') || 'Non détectées'}
+- Industrie: ${scrapedData.industry || 'Non détectée'}
+- Logo: ${scrapedData.logoUrl || 'Non trouvé'}
+
+Inclus:
+1. Palette de couleurs (codes hex)
+2. Typographie recommandée
+3. Style visuel (moderne/classique/minimaliste)
+4. Guidelines d'usage
+
+Format: Texte structuré avec sections claires.`;
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+    max_tokens: 600
+  });
+
+  return response.choices[0].message.content.trim();
 }
 
 async function generateLoomScript(companyName, url, scrapedData) {
   const issues = scrapedData.issues || [];
-  return `🎥 SCRIPT LOOM - ${companyName.toUpperCase()}
+  const prompt = `Crée un script Loom vidéo professionnel (2 minutes) pour présenter un package d'upgrade à ${companyName}.
 
-INTRO (0:00-0:15):
-"Bonjour ! J'ai analysé ${url} et identifié ${issues.length} opportunités d'amélioration."
+INFORMATIONS:
+- Site: ${url}
+- Score actuel: ${scrapedData.score}/100
+- Problèmes: ${issues.join(', ')}
+- Industrie: ${scrapedData.industry}
 
-PROBLÈMES (0:15-1:00):
-${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
+STRUCTURE:
+1. INTRO (0:00-0:15): Accroche personnalisée
+2. PROBLÈMES (0:15-1:00): Détails spécifiques des ${issues.length} problèmes
+3. SOLUTION (1:00-1:45): Package complet (design, chatbot, optimisations)
+4. CLOSING (1:45-2:00): Call-to-action pour un appel
 
-SOLUTION (1:00-1:45):
-✅ Site moderne et responsive
-✅ Chatbot IA 24/7
-✅ Design optimisé conversion
+Ton: Consultative, expert, orienté ROI.
+Format: Script avec timestamps.`;
 
-CLOSING (1:45-2:00):
-"Package complet prêt. On en discute cette semaine ?"`;
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.8,
+    max_tokens: 800
+  });
+
+  return response.choices[0].message.content.trim();
 }
 
 async function generateEmailTemplates(companyName, url, scrapedData) {
-  return [
-    {
-      subject: `IntelliAIScale - Opportunité pour ${companyName}`,
-      from: "Darly <darly@intelliaiscale.com>",
-      body: `Bonjour,
+  const issues = scrapedData.issues || [];
+  const score = scrapedData.score || 0;
+  
+  const prompt = `Crée 3 emails de prospection B2B ultra-personnalisés pour ${companyName}.
 
-Je suis Darly d'IntelliAIScale. J'ai analysé ${url} et identifié des opportunités d'amélioration.
+CONTEXTE:
+- Site: ${url}
+- Score audit: ${score}/100
+- Problèmes spécifiques: ${issues.join(', ')}
+- Industrie: ${scrapedData.industry}
 
-J'ai préparé pour vous :
-✅ Audit complet
-✅ Prototype HTML modernisé
-✅ Chatbot IA clé-en-main
+EMAIL 1 (INITIAL):
+- Subject line percutant
+- Mention de 2-3 problèmes spécifiques détectés
+- Proposition de valeur claire (audit + prototype + chatbot)
+- CTA: appel 15 min
 
-Disponible pour un appel de 15 min cette semaine ?
+EMAIL 2 (FOLLOW-UP J+3):
+- Subject: rappel subtil
+- Ajout d'un insight ou stat pertinente
+- Réaffirmation de la valeur
+- CTA: disponibilités
 
-Cordialement,
-Darly
-IntelliAIScale`
-    },
-    {
-      subject: `[Rappel] Package pour ${companyName}`,
-      from: "Darly <darly@intelliaiscale.com>",
-      body: `Bonjour,
+EMAIL 3 (CLOSING J+7):
+- Subject: dernier rappel non-insistant
+- Ton respectueux
+- Porte ouverte pour futur
+- CTA soft
 
-Je voulais m'assurer que vous aviez reçu mon email concernant ${url}.
+Format JSON:
+[
+  {
+    "subject": "...",
+    "from": "Darly <darly@intelliaiscale.com>",
+    "body": "..."
+  }
+]
 
-Le package inclut un design moderne, chatbot IA et prospection automatisée.
+Ton: Professionnel, consultatif, personnalisé, orienté ROI.`;
 
-Meilleur moment pour échanger ?
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.8,
+    max_tokens: 1200,
+    response_format: { type: "json_object" }
+  });
 
-Cordialement,
-Darly`
-    },
-    {
-      subject: `Dernier rappel - ${companyName}`,
-      from: "Darly <darly@intelliaiscale.com>",
-      body: `Bonjour,
-
-Dernier message concernant le package pour ${url}.
-
-Si le timing n'est pas bon, pas de souci !
-
-Excellente journée,
-Darly`
-    }
-  ];
+  const result = JSON.parse(response.choices[0].message.content);
+  return result.emails || [];
 }
 
 module.exports = { generateAllContent };
