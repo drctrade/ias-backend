@@ -65,4 +65,25 @@ async function getPackages() {
   }
 }
 
-module.exports = { savePackage, getPackages };
+async function getPackageById(id) {
+  if (!supabase) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('packages')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+
+    return data;
+  } catch (error) {
+    console.error('[SUPABASE] Erreur recuperation package:', error.message);
+    return null;
+  }
+}
+
+module.exports = { savePackage, getPackages, getPackageById };
