@@ -57,6 +57,22 @@ app.get('/api/packages', async (req, res) => {
   }
 });
 
+// Get single package by ID
+app.get('/api/packages/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pkg = await supabaseClient.getPackageById(id);
+    if (pkg) {
+      res.json({ success: true, package: pkg });
+    } else {
+      res.status(404).json({ success: false, error: 'Package non trouvé' });
+    }
+  } catch (error) {
+    console.error('[API] Erreur package:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Generate complete package
 app.post('/api/generate/package', async (req, res) => {
   const { url, companyName } = req.body;
