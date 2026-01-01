@@ -145,7 +145,7 @@ async function generateSocialVisuals(companyName, colors, industry, scrapedData 
         model: "gpt-image-1",
         prompt: `${SYSTEM_INSTRUCTION}\n\n${prompt}`,
         n: 1,
-        size: strategy.platform === 'Facebook Story' ? "1024x1792" : "1024x1024"
+        size: strategy.platform === 'Facebook Story' ? "1024x1536" : "1024x1024"
       });
 
       const b64 = response.data?.[0]?.b64_json;
