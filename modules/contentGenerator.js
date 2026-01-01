@@ -32,26 +32,78 @@ async function generateAllContent(companyName, url, scrapedData) {
 }
 
 async function generateSystemPrompt(companyName, url, scrapedData) {
-  const prompt = `Crée un system prompt professionnel pour un chatbot IA représentant ${companyName} (${url}).
+  const prompt = `Tu es un expert en création de system prompts pour agents vocaux IA de niveau mondial. Crée un system prompt COMPLET et ULTRA-PERFORMANT pour un agent vocal IA représentant ${companyName} (${url}).
 
-INFORMATIONS DU SITE:
+CONTEXTE BUSINESS:
 - Industrie: ${scrapedData.industry || 'Non détecté'}
-- Score actuel: ${scrapedData.score}/100
-- Problèmes détectés: ${scrapedData.issues.join(', ')}
+- Score site actuel: ${scrapedData.score}/100
+- Problèmes détectés: ${scrapedData.issues.join(', ') || 'Aucun'}
+- URL: ${url}
 
-Le chatbot doit:
-1. Refléter l'expertise de ${companyName}
-2. Qualifier les prospects intelligemment
-3. Proposer des rendez-vous de manière naturelle
-4. Être professionnel mais chaleureux
+OBJECTIFS DE L'AGENT VOCAL:
+1. **Qualification de prospects**: Identifier les leads qualifiés avec questions stratégiques
+2. **Prise de rendez-vous**: Convertir naturellement vers un appel de consultation
+3. **Représentation d'expertise**: Refléter le professionnalisme et l'expertise de ${companyName}
+4. **Expérience naturelle**: Sonner comme un humain parfait (pas robotique)
+5. **Gestion d'objections**: Répondre aux objections courantes avec confiance et empathie
 
-Format: Texte direct, sans balises markdown.`;
+FRAMEWORK DE PROMPT À SUIVRE (structure experte):
+
+## Identité & Rôle
+- Définir clairement qui est l'agent, son rôle, sa mission
+- Ton de voix (professionnel mais chaleureux, consultatif)
+- Valeurs et personnalité
+
+## Contexte Business
+- Expertise de ${companyName}
+- Services offerts
+- Proposition de valeur unique
+- Différenciateurs clés
+
+## Directives Conversationnelles
+- Comment démarrer la conversation (salutation personnalisée)
+- Questions de qualification (ouvertes, SPIN selling)
+- Gestion des différents types de prospects
+- Techniques de découverte des besoins
+- Stratégies de closing vers rendez-vous
+
+## Gestion des Objections
+- "C'est trop cher" → réponse type
+- "Je dois réfléchir" → réponse type
+- "Je n'ai pas le temps" → réponse type
+- Autres objections courantes dans ${scrapedData.industry}
+
+## Guardrails & Limites
+- Ce que l'agent PEUT faire
+- Ce que l'agent NE PEUT PAS faire
+- Comment rediriger si hors contexte
+- Gestion des urgences ou demandes sensibles
+
+## Style de Réponse
+- Longueur des réponses (concises pour du vocal)
+- Utilisation d'exemples concrets
+- Empathie et écoute active
+- Langage naturel (éviter le jargon excessif)
+
+## Call-to-Action Principal
+- Objectif: prendre rendez-vous pour appel de consultation
+- Alternatives si prospect pas prêt (newsletter, ressources gratuites)
+
+EXIGENCES CRITIQUES:
+✅ Prompt en MARKDOWN complet (avec sections ##, sous-sections ###, bullet points)
+✅ Détaillé et actionable (1500-2000 mots minimum)
+✅ Exemples concrets de réponses types
+✅ Ton consultatif et expert (pas de fluff marketing)
+✅ Focus ROI et résultats mesurables
+✅ Adapté spécifiquement à l'industrie ${scrapedData.industry}
+
+**Génère maintenant le system prompt complet en Markdown:**`;
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.7,
-    max_tokens: 500
+    temperature: 0.8,
+    max_tokens: 3000 // Augmenté pour un prompt complet
   });
 
   return response.choices[0].message.content.trim();
