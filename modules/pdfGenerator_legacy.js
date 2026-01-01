@@ -56,8 +56,180 @@ async function generateAuditPDF(companyName, url, scrapedData, aiContent) {
   });
 }
 
-async function generateProposalPDF(companyName, url, scrapedData, logoUrl = null) {
-  return new Promise((resolve, reject) => {
+const https = require('https');
+
+function getLang(scrapedData = {}) {
+  const l = (scrapedData.language || scrapedData.detected_language || 'en').toLowerCase();
+  if (l.startsWith('fr')) return 'fr';
+  if (l.startsWith('es')) return 'es';
+  return 'en';
+}
+
+function money(region, amount) {
+  const isCA = (region || '').toUpperCase() === 'CA';
+  const currency = isCA ? 'CAD' : 'USD';
+  // format simple (évite Intl si env minimal)
+  return `${amount.toLocaleString('en-US')} ${currency}`;
+}
+
+function strings(lang) {
+  const s = {
+    fr: {
+      title: "Proposition Commerciale",
+      subtitle: "Stealth Upgrade (Site + Automatisation + Contenu)",
+      preparedFor: "Préparé pour",
+      preparedBy: "Préparé par",
+      website: "Site web",
+      date: "Date",
+      summaryTitle: "Résumé",
+      summaryBody: "Voici une proposition claire et actionnable pour améliorer la conversion du site, automatiser la prise de rendez-vous et publier du contenu 3x/semaine.",
+      whatYouGet: "Ce que vous recevez",
+      package: "Options de service",
+      timeline: "Délais & Process",
+      terms: "Conditions",
+      cta: "Prochaine étape",
+      ctaBody: "Répondez à ce courriel avec “OK” et on planifie un appel de 15 minutes pour démarrer.",
+      includes: [
+        "Audit complet + rapport PDF",
+        "Refonte landing page (GHL) orientée conversion",
+        "Brand kit (couleurs, typographies, ton) basé sur votre site actuel",
+        "12 visuels/mois (3 par semaine) prêts à poster",
+        "Automatisation GHL (formulaires, pipeline, email/SMS de suivi)",
+        "Tracking & optimisation (SEO de base + performance)"
+      ],
+      tiers: {
+        starter: "Stealth Upgrade",
+        growth: "Growth Engine",
+        premium: "Dominance (IA + Automations)"
+      },
+      tierNotes: {
+        starter: "Idéal pour moderniser le site et convertir mieux, rapidement.",
+        growth: "Contenu + automatisation + suivi pour générer plus de RDV.",
+        premium: "Le pack qui fait tourner la machine presque toute seule."
+      },
+      timelineSteps: [
+        "Jour 1: Audit + extraction marque & contenus",
+        "Jour 2-3: Nouveau site GHL (version 1)",
+        "Jour 4: Ajustements (1 cycle) + intégrations",
+        "Jour 5: Mise en ligne + automatisations + livrables"
+      },
+      termsBody: "Livrables inclus ci-dessus. 1 cycle d’ajustements inclus. Toute demande hors-scope fera l’objet d’un devis. Paiement à la commande. Les résultats dépendent du marché, de l’offre et de l’exécution."
+    },
+    en: {
+      title: "Service Proposal",
+      subtitle: "Stealth Upgrade (Website + Automation + Content)",
+      preparedFor: "Prepared for",
+      preparedBy: "Prepared by",
+      website: "Website",
+      date: "Date",
+      summaryTitle: "Summary",
+      summaryBody: "A clear, actionable plan to improve website conversion, automate appointment capture, and publish content 3x/week.",
+      whatYouGet: "What you get",
+      package: "Service options",
+      timeline: "Timeline & process",
+      terms: "Terms",
+      cta: "Next step",
+      ctaBody: "Reply with “OK” and we’ll schedule a 15‑minute kickoff call.",
+      includes: [
+        "Full audit + PDF report",
+        "Conversion-focused GHL landing page redesign",
+        "Brand kit (colors, typography, tone) based on your current site",
+        "12 social visuals/month (3 per week) ready to post",
+        "GHL automation (forms, pipeline, email/SMS follow-up)",
+        "Tracking & optimization (basic SEO + performance)"
+      ],
+      tiers: {
+        starter: "Stealth Upgrade",
+        growth: "Growth Engine",
+        premium: "Dominance (AI + Automations)"
+      },
+      tierNotes: {
+        starter: "Perfect to modernize your site and convert better—fast.",
+        growth: "Content + automation + follow-up to drive more bookings.",
+        premium: "The “mostly hands‑off” growth machine."
+      },
+      timelineSteps: [
+        "Day 1: Audit + brand/content extraction",
+        "Day 2-3: New GHL site (v1)",
+        "Day 4: Adjustments (1 round) + integrations",
+        "Day 5: Go live + automations + deliverables"
+      ],
+      termsBody: "Deliverables included as listed. 1 revision round included. Out‑of‑scope requests are quoted separately. Payment due at start. Results depend on market, offer and execution."
+    },
+    es: {
+      title: "Propuesta de Servicio",
+      subtitle: "Stealth Upgrade (Sitio web + Automatización + Contenido)",
+      preparedFor: "Preparado para",
+      preparedBy: "Preparado por",
+      website: "Sitio web",
+      date: "Fecha",
+      summaryTitle: "Resumen",
+      summaryBody: "Un plan claro y accionable para mejorar conversiones, automatizar citas y publicar contenido 3 veces por semana.",
+      whatYouGet: "Qué recibes",
+      package: "Opciones de servicio",
+      timeline: "Cronograma & proceso",
+      terms: "Condiciones",
+      cta: "Siguiente paso",
+      ctaBody: "Responde con “OK” y agendamos una llamada de 15 minutos para iniciar.",
+      includes: [
+        "Auditoría completa + reporte PDF",
+        "Rediseño landing en GHL orientado a conversión",
+        "Brand kit (colores, tipografías, tono) basado en tu sitio actual",
+        "12 visuales/mes (3 por semana) listos para publicar",
+        "Automatización GHL (formularios, pipeline, seguimiento email/SMS)",
+        "Tracking y optimización (SEO básico + performance)"
+      ],
+      tiers: {
+        starter: "Stealth Upgrade",
+        growth: "Growth Engine",
+        premium: "Dominance (IA + Automatizaciones)"
+      },
+      tierNotes: {
+        starter: "Ideal para modernizar tu sitio y convertir mejor—rápido.",
+        growth: "Contenido + automatización + seguimiento para más citas.",
+        premium: "La máquina de crecimiento casi en piloto automático."
+      },
+      timelineSteps: [
+        "Día 1: Auditoría + extracción de marca/contenidos",
+        "Día 2-3: Nuevo sitio en GHL (v1)",
+        "Día 4: Ajustes (1 ronda) + integraciones",
+        "Día 5: Publicación + automatizaciones + entregables"
+      ],
+      termsBody: "Entregables incluidos como se listan. 1 ronda de ajustes incluida. Fuera de alcance se cotiza aparte. Pago al inicio. Resultados dependen del mercado, oferta y ejecución."
+    }
+  };
+  return s[lang] || s.en;
+}
+
+async function fetchImageBuffer(url) {
+  if (!url) return null;
+
+  try {
+    // Node 18+ fetch
+    if (typeof fetch === 'function') {
+      const r = await fetch(url);
+      if (!r.ok) return null;
+      const ab = await r.arrayBuffer();
+      return Buffer.from(ab);
+    }
+  } catch (_) {}
+
+  // Fallback https
+  return new Promise((resolve) => {
+    try {
+      https.get(url, (res) => {
+        const chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      }).on('error', () => resolve(null));
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+async function generateProposalPDF(companyName, url, scrapedData, providerLogoUrl = null) {
+  return new Promise(async (resolve, reject) => {
     try {
       const doc = new PDFDocument({
         size: 'A4',
@@ -68,320 +240,175 @@ async function generateProposalPDF(companyName, url, scrapedData, logoUrl = null
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => {
         const pdfBuffer = Buffer.concat(chunks);
-        resolve(pdfBuffer.toString('base64'));
-      });
-      doc.on('error', reject);
-
-      const primaryColor = '#2D7A8F';
-      const accentColor = '#5bc236';
-      const darkColor = '#0f204b';
-      const date = new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
-
-      // ============================================================
-      // PAGE 1: COUVERTURE PROFESSIONNELLE
-      // ============================================================
-      
-      doc.rect(0, 0, 595, 300).fill(darkColor);
-      
-      doc.fontSize(36).fillColor('#FFFFFF').font('Helvetica-Bold')
-         .text('PROPOSITION', 50, 100, { align: 'center' });
-      doc.fontSize(32).fillColor(accentColor)
-         .text('COMMERCIALE', 50, 145, { align: 'center' });
-      
-      doc.fontSize(18).fillColor('#FFFFFF').font('Helvetica')
-         .text(companyName, 50, 220, { align: 'center' });
-      
-      doc.fontSize(12).fillColor('#CCCCCC')
-         .text(`Transformation Digitale Complète | ${date}`, 50, 255, { align: 'center' });
-
-      // Bas de page
-      doc.fontSize(10).fillColor('#666666')
-         .text('IAS - Intelli AI Scale | darly@intelliaiscale.com', 50, 750, { align: 'center' });
-
-      // ============================================================
-      // PAGE 2: RÉSUMÉ EXÉCUTIF
-      // ============================================================
-      
-      doc.addPage();
-      
-      doc.fontSize(24).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Résumé Exécutif', 50, 50);
-      
-      doc.moveTo(50, 85).lineTo(545, 85).strokeColor(accentColor).lineWidth(2).stroke();
-      
-      doc.fontSize(12).fillColor('#333333').font('Helvetica')
-         .text(`Après analyse approfondie de votre site web ${url}, nous avons identifié des opportunités stratégiques pour transformer votre présence digitale.`, 50, 110, {
-           width: 495,
-           align: 'justify',
-           lineGap: 8
-         });
-
-      doc.moveDown(1.5);
-      
-      doc.fontSize(14).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Score Actuel de Votre Site', 50, doc.y);
-      
-      doc.fontSize(48).fillColor(scrapedData.score >= 70 ? accentColor : '#EF4444')
-         .text(`${scrapedData.score}/100`, 50, doc.y + 10);
-      
-      doc.fontSize(12).fillColor('#666666').font('Helvetica')
-         .text('Notre objectif : atteindre un score de 95+ en 30 jours.', 50, doc.y + 10);
-
-      doc.moveDown(2);
-      
-      doc.fontSize(14).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Opportunités Identifiées', 50, doc.y);
-      
-      const issues = scrapedData.issues || ['Amélioration du design', 'Optimisation mobile', 'Intégration IA'];
-      issues.slice(0, 5).forEach((issue, i) => {
-        doc.fontSize(11).fillColor('#333333').font('Helvetica')
-           .text(`${i + 1}. ${issue}`, 70, doc.y + 15, { width: 475 });
+        resolve(`data:application/pdf;base64,${pdfBuffer.toString('base64')}`);
       });
 
-      // ============================================================
-      // PAGE 3: PACKAGE ESSENTIEL
-      // ============================================================
-      
-      doc.addPage();
-      
-      doc.rect(50, 50, 495, 80).fillAndStroke('#F0F9FF', '#2D7A8F');
-      
-      doc.fontSize(22).fillColor(darkColor).font('Helvetica-Bold')
-         .text('PACKAGE ESSENTIEL', 70, 70);
-      doc.fontSize(12).fillColor('#666666').font('Helvetica')
-         .text('Transformation digitale fondamentale pour démarrer', 70, 100);
-      
-      // Inclusions
-      doc.fontSize(14).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Inclus dans ce Package :', 50, 160);
-      
-      const essentialInclusions = [
-        '✓ Site Web Modernisé (Design Responsive)',
-        '✓ Optimisation Mobile et Tablette',
-        '✓ Chatbot IA Basique (Qualification Prospects)',
-        '✓ Migration vers GoHighLevel',
-        '✓ Formation Équipe (2h)',
-        '✓ Support Email 30 jours',
-        '✓ Rapport d\'Audit Détaillé'
-      ];
-      
-      essentialInclusions.forEach((item, i) => {
-        doc.fontSize(11).fillColor('#333333').font('Helvetica')
-           .text(item, 70, 190 + (i * 25), { width: 450 });
+      const lang = getLang(scrapedData);
+      const L = strings(lang);
+
+      const region = scrapedData.region || scrapedData.detected_region || 'US';
+      const accent = (scrapedData.colors && scrapedData.colors[0]) ? scrapedData.colors[0] : '#2D7A8F';
+      const dark = '#0B1220';
+
+      // Logos (provider + optional client)
+      const providerLogo = await fetchImageBuffer(providerLogoUrl);
+      const clientLogoUrl = scrapedData.logo || scrapedData.logoUrl || scrapedData.site_logo || null;
+      const clientLogo = await fetchImageBuffer(clientLogoUrl);
+
+      // Header bar
+      doc.rect(0, 0, 612, 90).fill(dark);
+
+      if (providerLogo) {
+        try { doc.image(providerLogo, 50, 20, { height: 50 }); } catch (_) {}
+      }
+
+      // Title
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(22).text(L.title, 50, 105);
+      doc.fillColor('#C7D2FE').font('Helvetica').fontSize(12).text(L.subtitle, 50, 132);
+
+      // Client logo (right)
+      if (clientLogo) {
+        try { doc.image(clientLogo, 480, 22, { height: 46 }); } catch (_) {}
+      }
+
+      // Meta
+      const today = new Date().toISOString().slice(0, 10);
+      doc.fillColor('#111827').font('Helvetica-Bold').fontSize(11).text(`${L.preparedFor}:`, 50, 170);
+      doc.font('Helvetica').text(companyName, 160, 170);
+
+      doc.font('Helvetica-Bold').text(`${L.website}:`, 50, 188);
+      doc.font('Helvetica').text(url, 160, 188, { width: 380 });
+
+      doc.font('Helvetica-Bold').text(`${L.date}:`, 50, 206);
+      doc.font('Helvetica').text(today, 160, 206);
+
+      // Summary box
+      doc.roundedRect(50, 235, 512, 90, 12).fillAndStroke('#F8FAFC', '#E5E7EB');
+      doc.fillColor(dark).font('Helvetica-Bold').fontSize(14).text(L.summaryTitle, 70, 255);
+      doc.fillColor('#334155').font('Helvetica').fontSize(11).text(L.summaryBody, 70, 277, { width: 470, lineGap: 4 });
+
+      // What you get
+      let y = 350;
+      doc.fillColor(dark).font('Helvetica-Bold').fontSize(16).text(L.whatYouGet, 50, y);
+      y += 18;
+      doc.moveTo(50, y).lineTo(562, y).strokeColor(accent).lineWidth(2).stroke();
+      y += 18;
+
+      doc.fillColor('#111827').font('Helvetica').fontSize(11);
+      L.includes.forEach((item) => {
+        doc.text(`• ${item}`, 60, y, { width: 500 });
+        y += 16;
       });
-      
-      // Investissement
-      doc.moveDown(2);
-      doc.fontSize(14).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Investissement', 50, doc.y + 20);
-      
-      doc.rect(50, doc.y + 10, 495, 100).fillAndStroke('#F9FAFB', '#E5E7EB');
-      
-      const yPos = doc.y + 30;
-      doc.fontSize(12).fillColor('#666666').font('Helvetica')
-         .text('Setup Fee (Paiement Unique)', 70, yPos);
-      doc.fontSize(20).fillColor(accentColor).font('Helvetica-Bold')
-         .text('2 997 CAD', 400, yPos - 5);
-      
-      doc.fontSize(12).fillColor('#666666').font('Helvetica')
-         .text('Retainer Mensuel', 70, yPos + 50);
-      doc.fontSize(20).fillColor(primaryColor).font('Helvetica-Bold')
-         .text('497 CAD/mois', 370, yPos + 45);
-      
-      doc.fontSize(10).fillColor('#999999').font('Helvetica-Oblique')
-         .text('* Engagement minimum 3 mois', 70, yPos + 80);
 
-      // ============================================================
-      // PAGE 4: PACKAGE PREMIUM
-      // ============================================================
-      
-      doc.addPage();
-      
-      doc.rect(50, 50, 495, 80).fillAndStroke('#F0FDF4', '#5bc236');
-      
-      doc.fontSize(22).fillColor(darkColor).font('Helvetica-Bold')
-         .text('PACKAGE PREMIUM', 70, 65);
-      doc.fontSize(11).fillColor(accentColor).font('Helvetica-Bold')
-         .text('⭐ RECOMMANDÉ', 70, 95);
-      doc.fontSize(12).fillColor('#666666').font('Helvetica')
-         .text('Solution complète pour dominer votre marché', 70, 110);
-      
-      // Inclusions
-      doc.fontSize(14).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Tout le Package Essentiel, PLUS :', 50, 160);
-      
-      const premiumInclusions = [
-        '✓ Agent Vocal IA Avancé (Prise de RDV Automatisée)',
-        '✓ Système de Prospection Automatisée',
-        '✓ 6 Visuels Réseaux Sociaux Mensuels (DALL-E)',
-        '✓ Optimisation SEO Avancée',
-        '✓ Intégration CRM Complète',
-        '✓ Tableaux de Bord Analytics',
-        '✓ Formation Approfondie (6h)',
-        '✓ Support Prioritaire (Email + Slack)',
-        '✓ Mises à Jour Mensuelles',
-        '✓ Consultation Stratégique Mensuelle (1h)'
-      ];
-      
-      premiumInclusions.forEach((item, i) => {
-        doc.fontSize(11).fillColor('#333333').font('Helvetica')
-           .text(item, 70, 190 + (i * 22), { width: 450 });
-      });
-      
-      // Investissement
-      doc.addPage();
-      
-      doc.fontSize(20).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Investissement Package Premium', 50, 50);
-      
-      doc.rect(50, 90, 495, 120).fillAndStroke('#F0FDF4', '#5bc236');
-      
-      const yPos2 = 110;
-      doc.fontSize(12).fillColor('#666666').font('Helvetica')
-         .text('Setup Fee (Paiement Unique)', 70, yPos2);
-      doc.fontSize(24).fillColor(accentColor).font('Helvetica-Bold')
-         .text('4 997 CAD', 380, yPos2 - 8);
-      
-      doc.fontSize(12).fillColor('#666666').font('Helvetica')
-         .text('Retainer Mensuel', 70, yPos2 + 60);
-      doc.fontSize(24).fillColor(primaryColor).font('Helvetica-Bold')
-         .text('997 CAD/mois', 350, yPos2 + 52);
-      
-      doc.fontSize(10).fillColor('#999999').font('Helvetica-Oblique')
-         .text('* Engagement minimum 6 mois', 70, yPos2 + 100);
+      // Packages
+      y += 14;
+      doc.fillColor(dark).font('Helvetica-Bold').fontSize(16).text(L.package, 50, y);
+      y += 18;
+      doc.moveTo(50, y).lineTo(562, y).strokeColor(accent).lineWidth(2).stroke();
+      y += 18;
 
-      // ROI Estimé
-      doc.moveDown(3);
-      doc.fontSize(16).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Retour sur Investissement Estimé', 50, doc.y + 20);
-      
-      doc.rect(50, doc.y + 10, 495, 150).fillAndStroke('#FFFBEB', '#F59E0B');
-      
-      const yPos3 = doc.y + 30;
-      doc.fontSize(12).fillColor('#333333').font('Helvetica')
-         .text('Avec notre Package Premium, nos clients observent en moyenne :', 70, yPos3, { width: 455, align: 'justify' });
-      
-      doc.fontSize(11).fillColor('#666666').font('Helvetica')
-         .text('• +150% de leads qualifiés générés', 90, yPos3 + 40)
-         .text('• +75% de taux de conversion', 90, yPos3 + 60)
-         .text('• -60% de coûts opérationnels (automatisation)', 90, yPos3 + 80)
-         .text('• ROI positif dès le 3e mois', 90, yPos3 + 100);
+      // Pricing (credible, not crazy guarantees)
+      const isCA = (region || '').toUpperCase() === 'CA';
+      const starterSetup = isCA ? 1497 : 1197;
+      const growthSetup = isCA ? 2497 : 1997;
+      const premiumSetup = isCA ? 3997 : 3197;
 
-      // ============================================================
-      // PAGE 5: CONDITIONS & GARANTIES
-      // ============================================================
-      
-      doc.addPage();
-      
-      doc.fontSize(24).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Conditions & Garanties', 50, 50);
-      
-      doc.moveTo(50, 85).lineTo(545, 85).strokeColor(accentColor).lineWidth(2).stroke();
-      
-      // Période d'essai
-      doc.fontSize(16).fillColor(primaryColor).font('Helvetica-Bold')
-         .text('🛡️ Période d\'Essai de 30 Jours', 50, 110);
-      
-      doc.fontSize(11).fillColor('#333333').font('Helvetica')
-         .text('Si vous optez pour une mise à jour complète de votre site web avec notre Agent Vocal IA intégré, nous offrons une période d\'essai de 30 jours. Si vous n\'êtes pas satisfait des résultats, nous travaillerons avec vous pour ajuster la solution jusqu\'à atteindre vos objectifs.', 50, 140, {
-           width: 495,
-           align: 'justify',
-           lineGap: 6
-         });
-      
-      // Conditions
-      doc.moveDown(2);
-      doc.fontSize(16).fillColor(primaryColor).font('Helvetica-Bold')
-         .text('📋 Conditions Générales', 50, doc.y + 20);
-      
-      const conditions = [
-        '• Setup Fee payable à la signature du contrat',
-        '• Retainer mensuel facturé en début de mois',
-        '• Résiliation possible avec préavis de 30 jours après période d\'engagement',
-        '• Données et code source restent votre propriété',
-        '• Support inclus durant toute la durée du contrat',
-        '• Mises à jour et améliorations continues incluses'
-      ];
-      
-      conditions.forEach((cond, i) => {
-        doc.fontSize(11).fillColor('#333333').font('Helvetica')
-           .text(cond, 70, doc.y + 15, { width: 475 });
-      });
-      
-      // Timeline
-      doc.moveDown(2);
-      doc.fontSize(16).fillColor(primaryColor).font('Helvetica-Bold')
-         .text('⏱️ Timeline de Livraison', 50, doc.y + 20);
-      
-      doc.fontSize(11).fillColor('#333333').font('Helvetica')
-         .text('• Jours 1-7 : Analyse approfondie et planification', 70, doc.y + 20)
-         .text('• Jours 8-21 : Développement et intégration', 70, doc.y + 10)
-         .text('• Jours 22-28 : Tests et optimisations', 70, doc.y + 10)
-         .text('• Jour 30 : Mise en ligne et formation', 70, doc.y + 10);
+      const growthMonthly = isCA ? 997 : 797;
+      const premiumMonthly = isCA ? 1497 : 1197;
 
-      // ============================================================
-      // PAGE 6: PROCHAINES ÉTAPES
-      // ============================================================
-      
-      doc.addPage();
-      
-      doc.fontSize(24).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Prochaines Étapes', 50, 50);
-      
-      doc.moveTo(50, 85).lineTo(545, 85).strokeColor(accentColor).lineWidth(2).stroke();
-      
-      doc.fontSize(14).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Pour Démarrer Votre Transformation Digitale :', 50, 120);
-      
-      const steps = [
+      const tiers = [
         {
-          title: '1. Choisir Votre Package',
-          desc: 'Sélectionnez le package qui correspond le mieux à vos objectifs (Essentiel ou Premium).'
+          name: L.tiers.starter,
+          price: `${money(region, starterSetup)} (one-time)`,
+          note: L.tierNotes.starter,
+          bullets: [
+            lang === 'fr' ? "Site GHL (1 page) + optimisation conversion" : lang === 'es' ? "Landing GHL (1 página) + conversión" : "1-page GHL site + conversion optimization",
+            lang === 'fr' ? "Brand kit + copywriting de base" : lang === 'es' ? "Brand kit + copywriting base" : "Brand kit + baseline copywriting",
+            lang === 'fr' ? "6 visuels (pack démo)" : lang === 'es' ? "6 visuales (pack demo)" : "6 visuals (demo pack)"
+          ]
         },
         {
-          title: '2. Appel de Découverte (30 min)',
-          desc: 'Planifiez un appel avec notre équipe pour affiner les détails et répondre à vos questions.'
+          name: L.tiers.growth,
+          price: `${money(region, growthSetup)} setup + ${money(region, growthMonthly)}/mo`,
+          note: L.tierNotes.growth,
+          bullets: [
+            lang === 'fr' ? "12 visuels/mois (3/semaine) + planning" : lang === 'es' ? "12 visuales/mes (3/semana) + planificación" : "12 visuals/month (3/week) + scheduling",
+            lang === 'fr' ? "Automatisation GHL (pipeline + follow-up)" : lang === 'es' ? "Automatización GHL (pipeline + seguimiento)" : "GHL automation (pipeline + follow-up)",
+            lang === 'fr' ? "Optimisation SEO de base + analytics" : lang === 'es' ? "SEO básico + analíticas" : "Basic SEO + analytics"
+          ]
         },
         {
-          title: '3. Signature du Contrat',
-          desc: 'Finalisation des documents et paiement du Setup Fee pour commencer.'
-        },
-        {
-          title: '4. Lancement du Projet',
-          desc: 'Notre équipe démarre immédiatement après signature (kick-off meeting dans 48h).'
+          name: L.tiers.premium,
+          price: `${money(region, premiumSetup)} setup + ${money(region, premiumMonthly)}/mo`,
+          note: L.tierNotes.premium,
+          bullets: [
+            lang === 'fr' ? "Agent IA (pré-qualification + RDV)" : lang === 'es' ? "Agente IA (precalificación + citas)" : "AI agent (pre-qualify + bookings)",
+            lang === 'fr' ? "Automatisation avis & réputation" : lang === 'es' ? "Automatización reseñas & reputación" : "Reviews & reputation automation",
+            lang === 'fr' ? "Priorité support + optimisation continue" : lang === 'es' ? "Soporte prioritario + optimización" : "Priority support + ongoing optimization"
+          ]
         }
       ];
-      
-      let yStep = 170;
-      steps.forEach(step => {
-        doc.fontSize(13).fillColor(primaryColor).font('Helvetica-Bold')
-           .text(step.title, 50, yStep);
-        doc.fontSize(11).fillColor('#666666').font('Helvetica')
-           .text(step.desc, 70, yStep + 20, { width: 475, lineGap: 4 });
-        yStep += 85;
-      });
-      
-      // CTA Final
-      doc.rect(50, 580, 495, 120).fillAndStroke('#EFF6FF', primaryColor);
-      
-      doc.fontSize(18).fillColor(darkColor).font('Helvetica-Bold')
-         .text('Prêt à Transformer Votre Entreprise ?', 70, 605, { align: 'center', width: 455 });
-      
-      doc.fontSize(12).fillColor('#666666').font('Helvetica')
-         .text('Contactez-nous dès aujourd\'hui pour planifier votre appel de découverte', 70, 640, { align: 'center', width: 455 });
-      
-      doc.fontSize(14).fillColor(accentColor).font('Helvetica-Bold')
-         .text('📧 darly@intelliaiscale.com', 70, 670, { align: 'center', width: 455 });
 
-      // Footer
-      doc.fontSize(9).fillColor('#999999').font('Helvetica')
-         .text(`IAS - Intelli AI Scale | Proposition valide 30 jours | ${date}`, 50, 750, { align: 'center', width: 495 });
+      const cardW = 512;
+      const cardH = 120;
+
+      tiers.forEach((t, idx) => {
+        doc.roundedRect(50, y, cardW, cardH, 12).fillAndStroke('#0B1220', '#111827');
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(13).text(t.name, 70, y + 16);
+        doc.fillColor('#C7D2FE').font('Helvetica-Bold').fontSize(12).text(t.price, 70, y + 36);
+
+        doc.fillColor('#E5E7EB').font('Helvetica').fontSize(10).text(t.note, 70, y + 54, { width: 470 });
+
+        let by = y + 72;
+        doc.fillColor('#E5E7EB').font('Helvetica').fontSize(9);
+        t.bullets.forEach(b => {
+          doc.text(`• ${b}`, 70, by, { width: 470 });
+          by += 12;
+        });
+
+        y += cardH + 14;
+
+        if (y > 620 && idx < tiers.length - 1) {
+          doc.addPage();
+          y = 70;
+        }
+      });
+
+      // Timeline
+      if (y > 610) { doc.addPage(); y = 70; }
+      doc.fillColor(dark).font('Helvetica-Bold').fontSize(16).text(L.timeline, 50, y);
+      y += 18;
+      doc.moveTo(50, y).lineTo(562, y).strokeColor(accent).lineWidth(2).stroke();
+      y += 18;
+
+      doc.fillColor('#111827').font('Helvetica').fontSize(11);
+      L.timelineSteps.forEach(step => {
+        doc.text(`• ${step}`, 60, y, { width: 500 });
+        y += 16;
+      });
+
+      // Terms
+      y += 10;
+      doc.fillColor(dark).font('Helvetica-Bold').fontSize(16).text(L.terms, 50, y);
+      y += 18;
+      doc.moveTo(50, y).lineTo(562, y).strokeColor(accent).lineWidth(2).stroke();
+      y += 18;
+
+      doc.fillColor('#334155').font('Helvetica').fontSize(10).text(L.termsBody, 50, y, { width: 512, lineGap: 4 });
+
+      // CTA
+      doc.addPage();
+      doc.rect(0, 0, 612, 140).fill(dark);
+      if (providerLogo) {
+        try { doc.image(providerLogo, 50, 40, { height: 56 }); } catch (_) {}
+      }
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(22).text(L.cta, 50, 170);
+      doc.fillColor('#E5E7EB').font('Helvetica').fontSize(12).text(L.ctaBody, 50, 205, { width: 520, lineGap: 4 });
+
+      doc.fillColor('#111827').font('Helvetica-Bold').fontSize(12).text(`${L.preparedBy}: IntelliAIScale`, 50, 260);
 
       doc.end();
-      console.log('[PDF] Proposition commerciale professionnelle generee');
-
     } catch (error) {
-      console.error('[PDF] Erreur:', error.message);
       reject(error);
     }
   });

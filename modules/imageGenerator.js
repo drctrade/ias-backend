@@ -83,56 +83,81 @@ async function generateSocialVisuals(companyName, colors, industry, scrapedData 
 
   const images = [];
 
-  const imageStrategies = [
-    {
-      type: 'authority_expertise',
-      platform: 'LinkedIn',
-      purpose: 'Build trust and establish authority',
-      mainText: t(lang, 'authority_tagline', { company: companyName }),
-      secondaryText: t(lang, 'trusted_by', { audience: targetAudience }),
-      visualStyle: 'Premium corporate background, abstract office light, minimal shapes, no faces required, strong text contrast'
-    },
-    {
-      type: 'transformation_projection',
-      platform: 'Instagram',
-      purpose: 'Show transformation potential',
-      mainText: t(lang, 'transform', { company: companyName }),
-      secondaryText: t(lang, 'proven', { company: companyName }),
-      visualStyle: 'Before/after implied split, clean UI upgrade vibe, minimal device frame, no tiny text'
-    },
-    {
-      type: 'results_benefits',
-      platform: 'Facebook',
-      purpose: 'Show measurable outcomes',
-      mainText: t(lang, 'more_leads', { company: companyName }),
-      secondaryText: t(lang, 'results_like', { company: companyName }),
-      visualStyle: 'Big number typography, simple upward line, 1-2 clean bars max, no fake labels'
-    },
-    {
-      type: 'brand_consistency',
-      platform: 'Instagram',
-      purpose: 'Reinforce brand identity',
-      mainText: companyName,
-      secondaryText: t(lang, 'partner_growth', { company: companyName }),
-      visualStyle: `Brand-forward, minimalist, lots of whitespace, dominant ${primaryColor}, subtle gradients`
-    },
-    {
-      type: 'trust_clarity',
-      platform: 'LinkedIn',
-      purpose: 'Evoke trust and clarity',
-      mainText: t(lang, 'clarity_growth', { company: companyName }),
-      secondaryText: t(lang, 'digital_transformation', { company: companyName }),
-      visualStyle: 'Clean grid, trust icons (checkmarks), subtle depth, no faces, corporate premium'
-    },
-    {
-      type: 'soft_cta',
-      platform: 'Facebook Story',
-      purpose: 'Gentle CTA',
-      mainText: t(lang, 'ready_upgrade', { company: companyName }),
-      secondaryText: t(lang, 'free_audit', { company: companyName }),
-      visualStyle: 'Vertical mobile layout, CTA button shape, product-mockup style, high readability'
-    }
-  ];
+  // Stratégies orientées CLIENT (contenu postable immédiatement par l'entreprise)
+  // Objectif: B2C/B2B selon industrie, sans branding IntelliAIScale dans les visuels
+  function buildStrategies() {
+    const isHealth = /sant[eé]|health|medical/i.test(industry || '');
+    const isBeauty = isHealth || /spa|esthetic|esth[eé]tique|laser/i.test((scrapedData.rawText || ''));
+
+    // best-effort: extraire un service principal depuis headings/meta
+    const raw = `${(scrapedData.title || '')} ${(scrapedData.meta?.description || '')} ${(scrapedData.headings || []).join(' ')}`.toLowerCase();
+    let primaryService = isHealth ? (lang === 'fr' ? "Épilation au laser" : lang === 'es' ? "Depilación láser" : "Laser Hair Removal") : (lang === 'fr' ? "Votre service principal" : lang === 'es' ? "Tu servicio principal" : "Your main service");
+
+    if (/laser/.test(raw)) primaryService = (lang === 'fr' ? "Épilation au laser" : lang === 'es' ? "Depilación láser" : "Laser Hair Removal");
+    if (/skin|peau/.test(raw) && isBeauty) primaryService = (lang === 'fr' ? "Soins de la peau" : lang === 'es' ? "Cuidado de la piel" : "Skin Care");
+    if (/dent/.test(raw)) primaryService = (lang === 'fr' ? "Clinique dentaire" : lang === 'es' ? "Clínica dental" : "Dental Clinic");
+
+    const copy = {
+      fr: {
+        s1_h: `${primaryService}`,
+        s1_s: `Réservez votre consultation`,
+        s2_h: `Pourquoi choisir ${companyName} ?`,
+        s2_s: `Résultats visibles. Expérience premium.`,
+        s3_h: `FAQ : Est-ce que ça fait mal ?`,
+        s3_s: `Réponse courte + rassurante`,
+        s4_h: `Avant / Après`,
+        s4_s: `Résultats réels, sans exagération`,
+        s5_h: `Offre du moment`,
+        s5_s: `Consultation gratuite (si applicable)`,
+        s6_h: `Prêt(e) à commencer ?`,
+        s6_s: `Cliquez pour prendre rendez-vous`
+      },
+      en: {
+        s1_h: `${primaryService}`,
+        s1_s: `Book your consultation`,
+        s2_h: `Why ${companyName}?`,
+        s2_s: `Visible results. Premium experience.`,
+        s3_h: `FAQ: Does it hurt?`,
+        s3_s: `Short, reassuring answer`,
+        s4_h: `Before / After`,
+        s4_s: `Realistic results, no hype`,
+        s5_h: `Limited-time offer`,
+        s5_s: `Free consultation (if available)`,
+        s6_h: `Ready to start?`,
+        s6_s: `Tap to book your appointment`
+      },
+      es: {
+        s1_h: `${primaryService}`,
+        s1_s: `Reserva tu consulta`,
+        s2_h: `¿Por qué ${companyName}?`,
+        s2_s: `Resultados visibles. Experiencia premium.`,
+        s3_h: `FAQ: ¿Duele?`,
+        s3_s: `Respuesta breve y tranquilizadora`,
+        s4_h: `Antes / Después`,
+        s4_s: `Resultados reales, sin exagerar`,
+        s5_h: `Oferta por tiempo limitado`,
+        s5_s: `Consulta gratis (si aplica)`,
+        s6_h: `¿List@ para empezar?`,
+        s6_s: `Toca para agendar`
+      }
+    }[lang] || copy.en;
+
+    // Styles: clean, modern, patient/client-focused, no "digital agency" vibe
+    const baseStyle = isHealth || isBeauty
+      ? 'clean medical/beauty aesthetic, minimal, bright, premium, friendly, trustworthy, soft gradients, no busy background'
+      : 'clean modern brand aesthetic, minimal, premium, high contrast text, simple shapes';
+
+    return [
+      { type: 'offer_service', platform: 'Instagram', purpose: 'Service + CTA', mainText: copy.s1_h, secondaryText: copy.s1_s, visualStyle: `${baseStyle}, subtle abstract background, optional icon related to service, no people required` },
+      { type: 'why_us', platform: 'Instagram', purpose: 'Trust + positioning', mainText: copy.s2_h, secondaryText: copy.s2_s, visualStyle: `${baseStyle}, trust cues (checkmarks, stars icons without claiming ratings), no fake testimonials` },
+      { type: 'faq_pain', platform: 'Facebook', purpose: 'Objection handling', mainText: copy.s3_h, secondaryText: copy.s3_s, visualStyle: `${baseStyle}, Q/A layout, clear typography` },
+      { type: 'before_after', platform: 'Instagram', purpose: 'Transformation', mainText: copy.s4_h, secondaryText: copy.s4_s, visualStyle: `${baseStyle}, split layout placeholders, no explicit sensitive body imagery` },
+      { type: 'limited_offer', platform: 'Story', purpose: 'Offer', mainText: copy.s5_h, secondaryText: copy.s5_s, visualStyle: `${baseStyle}, strong CTA button area` },
+      { type: 'cta_booking', platform: 'Story', purpose: 'Booking CTA', mainText: copy.s6_h, secondaryText: copy.s6_s, visualStyle: `${baseStyle}, large CTA, mobile-first` }
+    ];
+  }
+
+  const imageStrategies = buildStrategies();
 
   for (let i = 0; i < imageStrategies.length; i++) {
     const strategy = imageStrategies[i];
@@ -219,7 +244,7 @@ function generatePlaceholders(companyName, colors) {
     { type: 'results_benefits', platform: 'Facebook', purpose: 'Results', prompt: 'Results visual', url: `https://placehold.co/1024x1024/${primaryColor}/ffffff?text=${encodeURIComponent(companyName + ' - Results')}`, base64: null },
     { type: 'brand_consistency', platform: 'Instagram', purpose: 'Branding', prompt: 'Branding visual', url: `https://placehold.co/1024x1024/${primaryColor}/ffffff?text=${encodeURIComponent(companyName + ' - Brand')}`, base64: null },
     { type: 'trust_clarity', platform: 'LinkedIn', purpose: 'Trust', prompt: 'Trust visual', url: `https://placehold.co/1024x1024/${primaryColor}/ffffff?text=${encodeURIComponent(companyName + ' - Trust')}`, base64: null },
-    { type: 'soft_cta', platform: 'Facebook Story', purpose: 'CTA', prompt: 'CTA visual', url: `https://placehold.co/1024x1792/${primaryColor}/ffffff?text=${encodeURIComponent(companyName + ' - CTA')}`, base64: null }
+    { type: 'soft_cta', platform: 'Facebook Story', purpose: 'CTA', prompt: 'CTA visual', url: `https://placehold.co/1024x1536/${primaryColor}/ffffff?text=${encodeURIComponent(companyName + ' - CTA')}`, base64: null }
   ];
 }
 
