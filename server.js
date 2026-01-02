@@ -201,12 +201,7 @@ app.post('/api/generate/package', async (req, res) => {
     });
 
     console.log(`[PACKAGE] 📊 Étape 6/7: Génération PDF...`);
-    const auditPDF = await pdfGenerator.generateAuditPDF({
-      companyName: finalCompanyName,
-      websiteUrl: url,
-      auditData: scrapedData,
-      aiContent
-    });
+    const auditPDF = await pdfGenerator.generateAuditPDF(finalCompanyName, url, scrapedData, aiContent);
 
     packageSnapshot = await supabaseClient.savePackage({
       ...packageSnapshot,
@@ -214,12 +209,7 @@ app.post('/api/generate/package', async (req, res) => {
       status: 'processing_audit_pdf'
     });
 
-    const proposalPDF = await pdfGenerator.generateProposalPDF({
-      companyName: finalCompanyName,
-      websiteUrl: url,
-      auditData: scrapedData,
-      aiContent
-    });
+    const proposalPDF = await pdfGenerator.generateProposalPDF(finalCompanyName, url, scrapedData, aiContent);
 
     packageSnapshot = await supabaseClient.savePackage({
       ...packageSnapshot,
