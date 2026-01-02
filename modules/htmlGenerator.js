@@ -8,14 +8,28 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-async function generateModernHTML(companyName, url, scrapedData, aiContent) {
+// This module has been called with different function names across versions.
+// To keep backward compatibility, we export aliases (generateGHLHtml, generateGHLHTML).
+
+async function generateModernHTML(companyName, url, scrapedData = {}, aiContent = {}) {
   console.log('[HTML] Génération du code HTML modernisé avec GPT-4...');
 
-  const colors = scrapedData.colors || [];
+  const colors = Array.isArray(scrapedData.colors) ? scrapedData.colors : [];
   const primaryColor = colors[0] || '#5bc236';
   const secondaryColor = colors[1] || '#0f204b';
   const logoUrl = scrapedData.logoUrl || '';
-  const sections = scrapedData.sections || [];
+  // Normalize sections safely (can be array or object)
+  let sections = [];
+  if (Array.isArray(scrapedData.sections)) {
+    sections = scrapedData.sections;
+  } else if (scrapedData.sections && typeof scrapedData.sections === 'object') {
+    sections = Object.values(scrapedData.sections);
+  }
+  sections = sections
+    .map((s) => (typeof s === 'string' ? { title: s } : s))
+    .filter(Boolean);
+
+  const issuesArr = Array.isArray(scrapedData.issues) ? scrapedData.issues : [];
 
   const prompt = `Tu es un expert développeur web spécialisé dans GoHighLevel (GHL).
 
@@ -25,8 +39,8 @@ INFORMATIONS DU SITE ACTUEL:
 - URL: ${url}
 - Industrie: ${scrapedData.industry || 'Non détecté'}
 - Score actuel: ${scrapedData.score}/100
-- Problèmes détectés: ${scrapedData.issues.join(', ')}
-- Sections existantes: ${sections.map(s => s.title).join(', ')}
+- Problèmes détectés: ${issuesArr.join(', ') || 'Aucun problème détecté'}
+- Sections existantes: ${sections.map(s => s?.title).filter(Boolean).join(', ') || 'Non détectées'}
 
 COULEURS BRAND:
 - Primaire: ${primaryColor}
@@ -66,7 +80,7 @@ OPTIMISATIONS GHL:
 
 CONTENU:
 - Texte professionnel et engageant
-- Adapté à l'industrie ${scrapedData.industry}
+- Adapté à l'industrie ${scrapedData.industry || 'Non détecté'}
 - Orienté bénéfices clients
 - Call-to-actions clairs
 
@@ -246,12 +260,14 @@ function generateFallbackHTML(companyName, primaryColor, secondaryColor, logoUrl
 </html>`;
 }
 
-// Backward-compatible exports:
-// Older backend versions expect htmlGenerator.generateGHLHtml(...)
-// We keep generateModernHTML as the main implementation and expose aliases.
+// Backward-compatible aliases
+async function generateGHLHtml(companyName, url, scrapedData = {}, aiContent = {}) {
+  return generateModernHTML(companyName, url, scrapedData, aiContent);
+}
+
 module.exports = {
   generateModernHTML,
-  generateGHLHtml: generateModernHTML,
-  generateGHLHTML: generateModernHTML,
-  generateGHL: generateModernHTML,
+  generateGHLHtml,
+  // common typo / alternate naming
+  generateGHLHTML: generateGHLHtml,
 };
