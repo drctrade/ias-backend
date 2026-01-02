@@ -14,61 +14,63 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
   console.log('[SUPABASE] Client initialisé');
 } else {
-  console.warn('[SUPABASE] Credentials manquants');
+  console.warn('[SUPABASE] ⚠️ SUPABASE_URL ou SUPABASE_KEY manquant. Mode offline.');
 }
 
+// Helper: safely ensure a UUID exists
+function ensureId(pkg = {}) {
+  return pkg.id || crypto.randomUUID();
+}
+
+/**
+ * Upsert a package (insert or update by id).
+ * This is intentionally idempotent so we can save partial results at every step.
+ */
 async function savePackage(packageData) {
-  if (!supabase) {
-    console.warn('[SUPABASE] Client non initialise');
-    return null;
-  }
+  if (!supabase) return packageData;
+
+  const payload = { ...packageData };
+  payload.id = ensureId(payload);
+
+  // Keep updated_at fresh on every save
+  payload.updated_at = new Date().toISOString();
 
   try {
-    // Générer un UUID si absent
-    if (!packageData.id) {
-      packageData.id = crypto.randomUUID();
-    }
-    
     const { data, error } = await supabase
       .from('packages')
-      .insert([packageData])
-      .select();
+      .upsert(payload, { onConflict: 'id' })
+      .select('*')
+      .single();
 
     if (error) throw error;
-
-    console.log('[SUPABASE] Package sauvegarde avec ID:', packageData.id);
-    return data[0];
+    return data;
   } catch (error) {
-    console.error('[SUPABASE] Erreur sauvegarde:', error.message);
-    throw error;
+    console.error('[SUPABASE] Erreur sauvegarde package:', error.message);
+    // Fallback: return payload so the app can keep running even if Supabase fails
+    return payload;
   }
 }
 
-async function getPackages() {
-  if (!supabase) {
-    return [];
-  }
+async function getPackages(limit = 10) {
+  if (!supabase) return [];
 
   try {
     const { data, error } = await supabase
       .from('packages')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(limit);
 
     if (error) throw error;
-
     return data || [];
   } catch (error) {
-    console.error('[SUPABASE] Erreur recuperation:', error.message);
+    console.error('[SUPABASE] Erreur recuperation packages:', error.message);
     return [];
   }
 }
 
 async function getPackageById(id) {
-  if (!supabase) {
-    return null;
-  }
+  if (!supabase) return null;
 
   try {
     const { data, error } = await supabase
@@ -78,7 +80,6 @@ async function getPackageById(id) {
       .single();
 
     if (error) throw error;
-
     return data;
   } catch (error) {
     console.error('[SUPABASE] Erreur recuperation package:', error.message);
