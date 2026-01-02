@@ -161,13 +161,7 @@ app.post('/api/generate/package', async (req, res) => {
     });
 
     console.log(`[PACKAGE] 📊 Étape 3/7: Génération HTML GHL avec GPT-4...`);
-    const aiContent = await contentGenerator.generateAllContent({
-      companyName: finalCompanyName,
-      websiteUrl: url,
-      auditData: scrapedData,
-      language: scrapedData.language,
-      region: scrapedData.region
-    });
+        const aiContent = await contentGenerator.generateAllContent(finalCompanyName, url, scrapedData);
 
     packageSnapshot = await supabaseClient.savePackage({
       ...packageSnapshot,
