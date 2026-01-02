@@ -8,6 +8,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
+const crypto = require('crypto');
 
 // Import des modules
 const scraper = require('./modules/scraper');
@@ -47,6 +48,48 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+
+// PDF streaming endpoints (robust preview + download without base64 decoding in the browser)
+app.get('/api/packages/:id/pdf/:type', async (req, res) => {
+  try {
+    const { id, type } = req.params;
+    const download = req.query.download === '1';
+
+    const pkg = await supabaseClient.getPackageById(id);
+    if (!pkg) return res.status(404).json({ error: 'Package introuvable' });
+
+    const field = type === 'audit' ? 'audit_report_pdf' : (type === 'proposal' ? 'proposal_pdf' : null);
+    if (!field) return res.status(400).json({ error: 'Type PDF invalide' });
+
+    let b64 = pkg[field];
+    if (!b64) return res.status(404).json({ error: 'PDF introuvable' });
+
+    // Accept raw base64 or data URL
+    if (typeof b64 === 'string' && b64.startsWith('data:')) {
+      const comma = b64.indexOf(',');
+      b64 = comma >= 0 ? b64.slice(comma + 1) : b64;
+    }
+
+    const buffer = Buffer.from(b64, 'base64');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Cache-Control', 'no-store');
+
+    const filename = `${(pkg.company_name || 'package').replace(/\s+/g, '_')}_${type}.pdf`;
+    if (download) {
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    } else {
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    }
+
+    return res.end(buffer);
+  } catch (error) {
+    console.error('[PDF] ❌ Erreur:', error.message);
+    return res.status(500).json({ error: 'Erreur PDF', details: error.message });
+  }
+});
+
 // Get packages
 app.get('/api/packages', async (req, res) => {
   try {
@@ -74,65 +117,6 @@ app.get('/api/packages/:id', async (req, res) => {
   }
 });
 
-// Stream Audit PDF (no base64 decoding in browser)
-app.get('/api/packages/:id/pdf/audit', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const pkg = await supabaseClient.getPackageById(id);
-
-    if (!pkg || !pkg.audit_report_pdf) {
-      return res.status(404).json({ success: false, error: 'PDF non trouvé' });
-    }
-
-    let base64Data = pkg.audit_report_pdf;
-    if (typeof base64Data === 'string' && base64Data.startsWith('data:application/pdf;base64,')) {
-      base64Data = base64Data.replace('data:application/pdf;base64,', '');
-    }
-
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    const download = req.query.download === '1' || req.query.download === 'true';
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="audit_${(pkg.company_name || 'company').replace(/\s+/g,'_')}.pdf"`);
-
-    return res.send(buffer);
-  } catch (error) {
-    console.error('[API] Erreur stream audit PDF:', error.message);
-    return res.status(500).json({ success: false, error: 'Erreur serveur PDF' });
-  }
-});
-
-// Stream Proposal PDF
-app.get('/api/packages/:id/pdf/proposal', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const pkg = await supabaseClient.getPackageById(id);
-
-    if (!pkg || !pkg.proposal_pdf) {
-      return res.status(404).json({ success: false, error: 'PDF non trouvé' });
-    }
-
-    let base64Data = pkg.proposal_pdf;
-    if (typeof base64Data === 'string' && base64Data.startsWith('data:application/pdf;base64,')) {
-      base64Data = base64Data.replace('data:application/pdf;base64,', '');
-    }
-
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    const download = req.query.download === '1' || req.query.download === 'true';
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="proposition_${(pkg.company_name || 'company').replace(/\s+/g,'_')}.pdf"`);
-
-    return res.send(buffer);
-  } catch (error) {
-    console.error('[API] Erreur stream proposal PDF:', error.message);
-    return res.status(500).json({ success: false, error: 'Erreur serveur PDF' });
-  }
-});
-
-
 // Generate complete package
 app.post('/api/generate/package', async (req, res) => {
   const { url, companyName } = req.body;
@@ -141,72 +125,156 @@ app.post('/api/generate/package', async (req, res) => {
     return res.status(400).json({ error: 'URL requise' });
   }
 
-  console.log(`[PACKAGE] 🚀 Génération pour ${url}...`);
+  // IMPORTANT: we persist progressively so we never lose a generation if a late step fails.
+  const packageId = crypto.randomUUID();
+  let packageSnapshot = {
+    id: packageId,
+    company_name: companyName || null,
+    website_url: url,
+    status: 'processing',
+    created_at: new Date().toISOString()
+  };
+
+  console.log(`[PACKAGE] 🚀 Génération pour ${url}... (id=${packageId})`);
 
   try {
+    // Save the initial row immediately (so it appears in "Packages récents" even if something fails later)
+    packageSnapshot = await supabaseClient.savePackage(packageSnapshot);
+
     console.log(`[PACKAGE] 📊 Étape 1/7: Connexion navigateur...`);
-    
+
     console.log(`[PACKAGE] 📊 Étape 2/7: Scraping du site...`);
     const scrapedData = await scraper.scrapeWebsite(url);
 
     const finalCompanyName = companyName || scrapedData.title || 'Entreprise';
 
-    console.log(`[PACKAGE] 📊 Étape 3/7: Génération HTML GHL avec GPT-4...`);
-    const aiContent = await contentGenerator.generateAllContent(finalCompanyName, url, scrapedData);
-
-    console.log(`[PACKAGE] 📊 Étape 4/7: Génération code HTML complet...`);
-    const htmlCode = await htmlGenerator.generateModernHTML(finalCompanyName, url, scrapedData, aiContent);
-
-    console.log(`[PACKAGE] 📊 Étape 5/7: Génération visuels Gemini...`);
-    const socialVisuals = await imageGenerator.generateSocialVisuals(finalCompanyName, scrapedData.colors, scrapedData.industry);
-
-    console.log(`[PACKAGE] 📊 Étape 6/7: Génération PDF...`);
-    const auditPDF = await pdfGenerator.generateAuditPDF(finalCompanyName, url, scrapedData, aiContent);
-    const providerLogoUrl = process.env.PROVIDER_LOGO_URL || 'https://storage.googleapis.com/msgsndr/3JVjplwbMF0mBlGPnSIp/media/67d72a6b1031c95c8a996682.png';
-    const proposalPDF = await pdfGenerator.generateProposalPDF(finalCompanyName, url, scrapedData, providerLogoUrl);
-
-    console.log(`[PACKAGE] 📊 Étape 7/7: Sauvegarde Supabase...`);
-    const packageData = {
+    // Persist scraped insights right away
+    packageSnapshot = await supabaseClient.savePackage({
+      ...packageSnapshot,
       company_name: finalCompanyName,
-      website_url: url,
-      status: 'completed',
       audit_score: scrapedData.score,
       audit_issues: scrapedData.issues,
-      color_palette: { colors: scrapedData.colors },
+      audit_opportunities: scrapedData.opportunities,
+      color_palette: scrapedData.colors,
       detected_industry: scrapedData.industry,
-      detected_language: scrapedData.language,
-      detected_region: scrapedData.region,
-      site_meta: scrapedData.meta,
-      site_headings: scrapedData.headings,
-      html_code: htmlCode,
+      status: 'processing_scraped'
+    });
+
+    console.log(`[PACKAGE] 📊 Étape 3/7: Génération HTML GHL avec GPT-4...`);
+    const aiContent = await contentGenerator.generateAllContent({
+      companyName: finalCompanyName,
+      websiteUrl: url,
+      auditData: scrapedData,
+      language: scrapedData.language,
+      region: scrapedData.region
+    });
+
+    packageSnapshot = await supabaseClient.savePackage({
+      ...packageSnapshot,
       ai_system_prompt: aiContent.systemPrompt,
       brand_kit_prompt: aiContent.brandKitPrompt,
       loom_script: aiContent.loomScript,
       email_templates: aiContent.emailTemplates,
-      audit_report_pdf: auditPDF,
-      proposal_pdf: proposalPDF,
+      status: 'processing_content'
+    });
+
+    console.log(`[PACKAGE] 📊 Étape 4/7: Génération code HTML complet...`);
+    const htmlCode = await htmlGenerator.generateGHLHtml({
+      companyName: finalCompanyName,
+      websiteUrl: url,
+      auditData: scrapedData,
+      aiContent
+    });
+
+    packageSnapshot = await supabaseClient.savePackage({
+      ...packageSnapshot,
+      html_code: htmlCode,
+      status: 'processing_html'
+    });
+
+    console.log(`[PACKAGE] 📊 Étape 5/7: Génération visuels (gpt-image-1)...`);
+    const socialVisuals = await imageGenerator.generateVisuals({
+      companyName: finalCompanyName,
+      websiteUrl: url,
+      auditData: scrapedData,
+      aiContent
+    });
+
+    packageSnapshot = await supabaseClient.savePackage({
+      ...packageSnapshot,
       social_visuals: socialVisuals,
-      created_at: new Date().toISOString()
-    };
+      status: 'processing_images'
+    });
 
-    const savedPackage = await supabaseClient.savePackage(packageData);
+    console.log(`[PACKAGE] 📊 Étape 6/7: Génération PDF...`);
+    const auditPDF = await pdfGenerator.generateAuditPDF({
+      companyName: finalCompanyName,
+      websiteUrl: url,
+      auditData: scrapedData,
+      aiContent
+    });
 
-    console.log(`[PACKAGE] ✅ Package sauvegardé !`);
+    packageSnapshot = await supabaseClient.savePackage({
+      ...packageSnapshot,
+      audit_report_pdf: auditPDF,
+      status: 'processing_audit_pdf'
+    });
+
+    const proposalPDF = await pdfGenerator.generateProposalPDF({
+      companyName: finalCompanyName,
+      websiteUrl: url,
+      auditData: scrapedData,
+      aiContent
+    });
+
+    packageSnapshot = await supabaseClient.savePackage({
+      ...packageSnapshot,
+      proposal_pdf: proposalPDF,
+      status: 'processing_proposal_pdf'
+    });
+
+    console.log(`[PACKAGE] 📊 Étape 7/7: Recherche prospects...`);
+    const prospects = await prospectFinder.findQualifiedProspects({
+      companyName: finalCompanyName,
+      websiteUrl: url,
+      auditData: scrapedData
+    });
+
+    packageSnapshot = await supabaseClient.savePackage({
+      ...packageSnapshot,
+      qualified_prospects: prospects,
+      status: 'completed'
+    });
+
+    console.log(`[PACKAGE] ✅ Package généré et sauvegardé !`);
 
     res.json({
       success: true,
       message: 'Package généré avec succès',
-      package: savedPackage || packageData
+      package: packageSnapshot
     });
 
   } catch (error) {
     console.error('[PACKAGE] ❌ Erreur:', error.message);
+
+    // Persist failure state but keep partial results
+    try {
+      await supabaseClient.savePackage({
+        ...packageSnapshot,
+        status: 'error',
+      });
+    } catch (e) {
+      // ignore secondary failure
+    }
+
     res.status(500).json({
       error: 'Erreur génération package',
-      details: error.message
+      details: error.message,
+      packageId: packageId
     });
   }
 });
+
 
 // ================================
 // START SERVER
