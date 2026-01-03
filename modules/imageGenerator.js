@@ -1,302 +1,211 @@
-/**
- * imageGenerator.js — v5.3 (Luxury Clinic Social Assets)
- *
- * Goals:
- * - Generate premium, luxury, clinic-specific social creatives (NOT agency visuals)
- * - Avoid placeholders like [object Object]
- * - Provide backward-compatible function names:
- *    - generateVisuals(...)  (used by server.js in some versions)
- *    - generateSocialAssets(...)
- *
- * Notes:
- * - This module does NOT require changing the rest of the pipeline.
- * - It produces an array of assets with {type, size, prompt, base64?, url?}
- * - The caller is responsible for calling the image API and storing results.
- */
+import crypto from 'crypto';
+import { uploadBuffer } from './supabase.js';
 
-const DEFAULT_BRAND = {
-  // Luxury palette defaults: deep navy + warm white + gold accent
-  primary: "#0B1F33",
-  secondary: "#F6F2EA",
-  accent: "#C8A451",
-};
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+const IMAGE_MODEL = process.env.IMAGE_MODEL || 'gpt-image-1';
 
-const SAFE_SIZES = {
-  square: "1024x1024",
-  story: "1024x1536",
-};
-
-function isHexColor(v) {
-  return typeof v === "string" && /^#?[0-9a-fA-F]{6}$/.test(v.trim());
+function slug(s) {
+  return (s || 'client')
+    .toString()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 60);
 }
 
-function normalizeHex(v) {
-  if (!isHexColor(v)) return null;
-  const s = v.trim();
-  return s.startsWith("#") ? s.toUpperCase() : ("#" + s.toUpperCase());
+function pickPrimaryColor(colors) {
+  return Array.isArray(colors) && colors.length ? colors[0] : '#0b3a5a';
 }
 
-/**
- * Extract a clean palette from scraper output.
- * Expected shapes:
- * - colors: ["#123456", ...]
- * - colors: [{hex:"#123456"}, ...]
- */
-function pickPalette(colors) {
-  const list = Array.isArray(colors) ? colors : [];
-  const hexes = [];
-
-  for (const c of list) {
-    if (typeof c === "string") {
-      const h = normalizeHex(c);
-      if (h) hexes.push(h);
-    } else if (c && typeof c === "object") {
-      const maybe = c.hex || c.color || c.value;
-      const h = normalizeHex(String(maybe || ""));
-      if (h) hexes.push(h);
-    }
-  }
-
-  // Prefer a dark primary if present; otherwise fallback to luxury default.
-  const primary =
-    hexes.find(h => {
-      // crude "dark-ish" check
-      const n = parseInt(h.slice(1), 16);
-      return n < 0x555555;
-    }) || DEFAULT_BRAND.primary;
-
-  const accent =
-    hexes.find(h => h !== primary) || DEFAULT_BRAND.accent;
-
-  return {
-    primary,
-    secondary: DEFAULT_BRAND.secondary,
-    accent,
+function industryCreativeBrief({ industry, companyName, language }) {
+  const lang = (language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en';
+  const base = {
+    vibe: 'premium, luxury, clean, modern, high-end editorial photography, soft natural light, minimal clutter',
+    avoid: 'no stocky corporate vibes, no cheesy gradients, no random business suits, no visible brand logos, no distorted hands, no gibberish text',
   };
-}
 
-function sanitizeText(v) {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "string") return v.trim();
-  // Prevent [object Object]
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
-  }
-}
-
-/**
- * Build on-brand, clinic-specific copy for laser hair removal (FR/EN).
- * Keep it compliant: no guaranteed results, no invented stats, no medical claims.
- */
-function buildCopy({ companyName, language }) {
-  const name = sanitizeText(companyName) || "Votre clinique";
-  const lang = (sanitizeText(language) || "fr").toLowerCase();
-
-  if (lang.startsWith("en")) {
+  if ((industry || '').includes('laser') || (industry || '').includes('aesthetic')) {
     return {
-      offer_service: {
-        headline: "Luxury Laser Hair Removal",
-        subhead: `${name}`,
-        body: "Smooth skin, modern technology, discreet experience.",
-        cta: "Book a free consultation",
-      },
-      why_us: {
-        headline: "Why choose us?",
-        bullets: [
-          "Medical-grade equipment",
-          "Trained professionals",
-          "Private, premium setting",
-        ],
-        cta: "Get your consultation",
-      },
-      faq_pain: {
-        headline: "Does it hurt?",
-        body: "Most clients describe a quick warm snap. We adapt settings to your comfort.",
-        cta: "Ask us your questions",
-      },
-      limited_offer: {
-        headline: "Limited spots this month",
-        body: "Reserve your consultation to discuss your ideal plan.",
-        cta: "Reserve now",
-      },
-      cta_booking: {
-        headline: "Ready to start?",
-        body: "Choose a time that works for you.",
-        cta: "Book online",
-      },
-      before_after: {
-        headline: "A cleaner routine",
-        body: "Less shaving. More comfort. Results vary by person.",
-        cta: "Discover the process",
-      },
+      ...base,
+      setting: lang === 'fr'
+        ? `clinique esthétique haut de gamme, ambiance spa médicale, réception élégante, peau lumineuse`
+        : `high-end aesthetic clinic, med-spa ambience, elegant reception, glowing skin`,
+      audience: lang === 'fr'
+        ? `clientèle premium, femmes et hommes 25-55, confiance et discrétion`
+        : `premium clients, women & men 25-55, trust & discretion`,
     };
   }
 
-  // Default: French (Canada-friendly)
+  if ((industry || '').includes('restaurant')) {
+    return {
+      ...base,
+      setting: lang === 'fr'
+        ? `restaurant chic, lumière chaude, plats raffinés, expérience`
+        : `chic restaurant, warm light, refined plates, experience`,
+      audience: lang === 'fr' ? `foodies, couples, événements` : `foodies, couples, events`,
+    };
+  }
+
   return {
-    offer_service: {
-      headline: "Épilation laser premium",
-      subhead: `${name}`,
-      body: "Expérience discrète • Technologie moderne • Confort d’abord",
-      cta: "Réserver une consultation gratuite",
-    },
-    why_us: {
-      headline: "Pourquoi nous choisir",
-      bullets: [
-        "Équipement de qualité médicale",
-        "Professionnels formés",
-        "Cadre privé et haut de gamme",
-      ],
-      cta: "Obtenir ma consultation",
-    },
-    faq_pain: {
-      headline: "Est-ce que ça fait mal ?",
-      body: "La sensation ressemble souvent à un petit « claquement chaud ». On ajuste selon votre confort.",
-      cta: "Poser une question",
-    },
-    limited_offer: {
-      headline: "Places limitées ce mois-ci",
-      body: "Réservez votre consultation pour bâtir un plan adapté à votre peau.",
-      cta: "Réserver maintenant",
-    },
-    cta_booking: {
-      headline: "Prête à commencer ?",
-      body: "Choisissez une plage horaire qui vous convient.",
-      cta: "Réserver en ligne",
-    },
-    before_after: {
-      headline: "Routine simplifiée",
-      body: "Moins de rasage. Plus de confort. Les résultats varient selon chaque personne.",
-      cta: "Voir comment ça marche",
-    },
+    ...base,
+    setting: lang === 'fr'
+      ? `univers premium correspondant à l'activité, textures élégantes, composition soignée`
+      : `premium world matching the business, elegant textures, curated composition`,
+    audience: lang === 'fr' ? `clients qualifiés` : `qualified customers`,
   };
 }
 
-/**
- * Premium art direction prompt (model-agnostic).
- * We explicitly forbid “agency / growth / charts / generic business” visuals.
- */
-function baseStylePrompt({ palette }) {
-  return [
-    "Create a premium luxury social media creative for a high-end laser hair removal clinic.",
-    "Aesthetic: modern, minimal, editorial, high-end skincare/spa vibe, soft lighting, clean composition.",
-    `Color palette: deep navy (${palette.primary}), warm off-white (${palette.secondary}), subtle gold accent (${palette.accent}).`,
-    "Typography: elegant sans-serif, high contrast, perfectly centered/aligned, no pixelation, no random gradients.",
-    "Imagery: tasteful, clinic-related (modern treatment room, laser device, clinician with gloves, calm client), or clean abstract luxury background.",
-    "Avoid: marketing agency visuals, business suits, charts, “digital growth” clichés, random icons, [object Object], lorem ipsum.",
-    "No fake statistics, no medical claims, no exaggerated before/after claims. If showing before/after, keep it subtle and non-graphic.",
-  ].join(" ");
-}
-
-function buildPrompt({ type, copy, palette, sizeKind }) {
-  const style = baseStylePrompt({ palette });
-  const C = copy[type];
-
-  // guard: if missing
-  if (!C) {
-    return `${style} Create a clean premium clinic social post for ${sanitizeText(copy?.offer_service?.subhead || "a clinic")}.`;
+async function generateImage({ prompt, size }) {
+  if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is missing');
+  const res = await fetch(`${OPENAI_BASE_URL}/images/generations`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: IMAGE_MODEL,
+      prompt,
+      size, // "1024x1024" or "1024x1536"
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(()=> '');
+    throw new Error(`OpenAI image error: ${res.status} ${txt}`);
   }
-
-  const headline = sanitizeText(C.headline);
-  const subhead = sanitizeText(C.subhead || "");
-  const body = sanitizeText(C.body || "");
-  const cta = sanitizeText(C.cta || "");
-  const bullets = Array.isArray(C.bullets) ? C.bullets.map(sanitizeText).filter(Boolean) : [];
-
-  // Layout directives by asset type
-  const layoutByType = {
-    offer_service: "Layout: hero headline top-left, subhead smaller under it, body one line, CTA button at bottom. Include subtle clinic imagery background.",
-    why_us: "Layout: headline at top, 3 bullet points with minimal icons, CTA button bottom. Background: modern clinic interior blur.",
-    faq_pain: "Layout: big question headline, short reassuring body, CTA button. Background: soft off-white with minimal gold accent line.",
-    before_after: "Layout: split-card concept 'Avant / Après' as minimal text labels only; do NOT show body close-ups. Use abstract texture or elegant clinic detail. Add disclaimer small: 'Résultats variables'.",
-    limited_offer: "Layout: bold headline, short body, CTA button. Add small 'Sur rendez-vous' note. Background: premium abstract gradient (subtle).",
-    cta_booking: "Layout: headline, body, CTA button. Background: tasteful reception / booking moment, not business sales.",
-  };
-
-  const layout = layoutByType[type] || "Layout: headline, body, CTA button. Minimal and premium.";
-
-  const languageInstruction =
-    (headline + " " + body).match(/[éèêàçù]/i) ? "All on-image text must be in French." : "All on-image text must be in English.";
-
-  const bulletText = bullets.length ? `Bullets: ${bullets.join(" • ")}.` : "";
-  const sub = subhead ? `Subhead: ${subhead}.` : "";
-
-  // Size guidance
-  const sizeHint = sizeKind === "story"
-    ? "Format: vertical story 4:5-ish, keep safe margins for UI overlays."
-    : "Format: square, keep generous margins.";
-
-  return [
-    style,
-    sizeHint,
-    languageInstruction,
-    layout,
-    `Headline: "${headline}".`,
-    sub,
-    body ? `Body: "${body}".` : "",
-    bulletText,
-    cta ? `CTA button text: "${cta}".` : "",
-    "Render as a polished finished social creative ready to post.",
-  ].filter(Boolean).join(" ");
+  const json = await res.json();
+  const b64 = json.data?.[0]?.b64_json;
+  if (!b64) throw new Error('Image generation returned no base64');
+  return Buffer.from(b64, 'base64');
 }
 
-function planAssets({ companyName, language, palette }) {
-  const copy = buildCopy({ companyName, language });
+function makeVisualPlan({ language, companyName, industry }) {
+  const lang = (language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en';
 
-  // 6 assets: 4 square + 2 story (balanced for IG)
+  // Universal set of 6 social visuals (works for most industries).
+  // Copy is intentionally short and premium.
   return [
-    { type: "offer_service", sizeKind: "square" },
-    { type: "why_us", sizeKind: "square" },
-    { type: "faq_pain", sizeKind: "square" },
-    { type: "before_after", sizeKind: "square" },
-    { type: "limited_offer", sizeKind: "story" },
-    { type: "cta_booking", sizeKind: "story" },
-  ].map(a => ({
-    ...a,
-    size: SAFE_SIZES[a.sizeKind],
-    prompt: buildPrompt({ type: a.type, copy, palette, sizeKind: a.sizeKind }),
-  }));
+    {
+      key: 'offer_service',
+      format: 'post',
+      size: '1024x1024',
+      headline: lang === 'fr' ? 'Service phare' : 'Signature Service',
+      sub: lang === 'fr' ? 'Une expérience premium, pensée pour vous' : 'A premium experience, built for you',
+    },
+    {
+      key: 'why_us',
+      format: 'post',
+      size: '1024x1024',
+      headline: lang === 'fr' ? 'Pourquoi nous ?' : `Why ${companyName || 'us'}?`,
+      sub: lang === 'fr' ? 'Résultats. Sécurité. Confiance.' : 'Results. Safety. Trust.',
+    },
+    {
+      key: 'faq',
+      format: 'post',
+      size: '1024x1024',
+      headline: lang === 'fr' ? 'FAQ' : 'FAQ',
+      sub: lang === 'fr' ? 'Réponse courte et rassurante' : 'Short, reassuring answer',
+    },
+    {
+      key: 'before_after',
+      format: 'post',
+      size: '1024x1024',
+      headline: lang === 'fr' ? 'Avant / Après' : 'Before / After',
+      sub: lang === 'fr' ? 'Peau plus lisse — résultats durables' : 'Smoother skin — lasting results',
+    },
+    {
+      key: 'limited_offer',
+      format: 'story',
+      size: '1024x1536',
+      headline: lang === 'fr' ? 'Offre limitée' : 'Limited Offer',
+      sub: lang === 'fr' ? 'Consultation gratuite' : 'Free consultation',
+    },
+    {
+      key: 'cta_booking',
+      format: 'story',
+      size: '1024x1536',
+      headline: lang === 'fr' ? 'Prendre rendez-vous' : 'Book now',
+      sub: lang === 'fr' ? 'Réservez votre consultation' : 'Reserve your consultation',
+      button: lang === 'fr' ? 'Réserver' : 'Book',
+    },
+  ];
 }
 
-/**
- * Main entrypoint — used by server.js in some branches.
- * @param {Object} params
- * @param {string} params.companyName
- * @param {string} params.language
- * @param {Array}  params.colors
- * @param {function} params.imageClient optional: async ({prompt,size}) => ({base64,url})
- */
-async function generateVisuals(params = {}) {
-  const companyName = sanitizeText(params.companyName);
-  const language = sanitizeText(params.language) || "fr";
-  const palette = pickPalette(params.colors);
+export async function generateVisuals({
+  packageId,
+  companyName,
+  websiteUrl,
+  industry,
+  language,
+  region,
+  colors,
+  siteMeta,
+  headings,
+}) {
+  const primary = pickPrimaryColor(colors);
+  const brief = industryCreativeBrief({ industry, companyName, language });
+  const plan = makeVisualPlan({ language, companyName, industry });
 
-  const assets = planAssets({ companyName, language, palette });
+  // If key missing, return empty array so pipeline completes.
+  if (!OPENAI_API_KEY) return [];
 
-  // If no image client, return planned prompts (so pipeline can still save something)
-  if (typeof params.imageClient !== "function") {
-    return assets.map(a => ({ ...a, base64: null, url: null }));
-  }
-
-  // Generate sequentially to reduce rate-limit spikes
   const out = [];
-  for (const a of assets) {
-    const res = await params.imageClient({ prompt: a.prompt, size: a.size });
-    out.push({ ...a, base64: res?.base64 || null, url: res?.url || null });
+  const basePath = `packages/${packageId}/visuals`;
+  const brand = {
+    companyName: companyName || siteMeta?.title || 'Client',
+    websiteUrl,
+    primaryColor: primary,
+    language: (language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en',
+    industry: industry || 'general business',
+    headings: (headings || []).slice(0, 8).map(h => h.text),
+  };
+
+  for (const v of plan) {
+    const prompt = `
+Create a high-end social media visual for ${brand.companyName}.
+
+Brand context:
+- Industry: ${brand.industry}
+- Target audience: ${brief.audience}
+- Setting style: ${brief.setting}
+- Visual vibe: ${brief.vibe}
+- Primary color accent: ${brand.primaryColor}
+
+TEXT TO INCLUDE (must be clean, correctly spelled, no placeholders):
+- Headline: "${v.headline}"
+- Subheadline: "${v.sub}"
+${v.button ? `- Button text: "${v.button}"` : ''}
+
+DESIGN RULES:
+- Use premium editorial photography style relevant to the industry.
+- Use minimal typography. Clear hierarchy. Lots of whitespace.
+- Use the primary color only as an accent (button, underline, small block).
+- No logos, no watermarks.
+- Avoid awkward hands, distorted faces, extra fingers.
+- No random extra words beyond the provided text.
+
+Output: a single finished image ready to post.
+`.trim();
+
+    const buffer = await generateImage({ prompt, size: v.size });
+    const filename = `${v.key}_${crypto.randomBytes(4).toString('hex')}.png`;
+    const storagePath = `${basePath}/${filename}`;
+    const uploaded = await uploadBuffer({
+      path: storagePath,
+      buffer,
+      contentType: 'image/png',
+    });
+
+    out.push({
+      key: v.key,
+      format: v.format,
+      size: v.size,
+      headline: v.headline,
+      storage_path: uploaded.path,
+      public_url: uploaded.publicUrl,
+    });
   }
+
   return out;
 }
-
-// Alias for compatibility
-async function generateSocialAssets(params = {}) {
-  return generateVisuals(params);
-}
-
-module.exports = {
-  generateVisuals,
-  generateSocialAssets,
-  // exposed for unit tests / debugging
-  _internals: { pickPalette, buildCopy, buildPrompt, planAssets },
-};
