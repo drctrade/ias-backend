@@ -1,7 +1,8 @@
 {
   "name": "ias-backend",
-  "version": "4.1.0",
-  "description": "IAS Backend API v4.1 - Firecrawl",
+  "version": "4.1.1",
+  "description": "IAS Backend API – stable unified version",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
