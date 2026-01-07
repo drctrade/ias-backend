@@ -1,24 +1,13 @@
-// ================================
+// ==============================
 // IAS STEALTH UPGRADE SYSTEM v4.1
-// ES MODULE SAFE BOOTSTRAP
-// ================================
+// Architecture ESM propre (Render-ready)
+// ==============================
 
-// Load env ONLY in local / non-production
-if (process.env.NODE_ENV !== "production") {
-  const dotenv = await import("dotenv");
-  dotenv.default.config();
-}
-
-// Core deps (ESM)
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import path from "path";
 import { fileURLToPath } from "url";
-
-// Fix __dirname in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Import des modules
 const scraper = require('./modules/scraper');
