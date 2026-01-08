@@ -1,23 +1,42 @@
-// ==============================
+// ================================
 // IAS STEALTH UPGRADE SYSTEM v4.1
-// Architecture ESM propre (Render-ready)
-// ==============================
+// ================================
 
-require('dotenv').config();
+// Charge dotenv uniquement en local (Render fournit déjà les env vars en prod)
+if (process.env.NODE_ENV !== "production") {
+  const dotenv = await import("dotenv");
+  dotenv.default.config();
+}
+
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Import des modules
-const scraper = require('./modules/scraper');
-const pdfGenerator = require('./modules/pdfGenerator');
-const contentGenerator = require('./modules/contentGenerator');
-const imageGenerator = require('./modules/imageGenerator');
-const htmlGenerator = require('./modules/htmlGenerator');
-const prospectFinder = require('./modules/prospectFinder');
-const supabaseClient = require('./modules/supabase');
+// Helpers __dirname en ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Import des modules (⚠️ pas de require)
+import scraper from "./modules/scraper.js";
+import pdfGenerator from "./modules/pdfGenerator.js";
+import contentGenerator from "./modules/contentGenerator.js";
+import imageGenerator from "./modules/imageGenerator.js";
+import htmlGenerator from "./modules/htmlGenerator.js";
+import prospectFinder from "./modules/prospectFinder.js";
+
+// supabase.js est en CommonJS (module.exports), donc on l’importe en "default"
+import supabaseModule from "./modules/supabase.js";
+const {
+  upsertPackage,
+  updatePackage,
+  getPackageById,
+  listPackages,
+  uploadBuffer,
+  downloadBuffer,
+  buckets,
+} = supabaseModule;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
